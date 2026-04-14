@@ -51,6 +51,14 @@ export const marketController = {
     res.json({ success: true, data, timestamp: new Date().toISOString() });
   }),
 
+  getSectorAnalytics: asyncHandler(async (req: Request, res: Response) => {
+    setCacheHeaders(res, 60, 180);
+    const { sector } = req.params;
+    const { limit = '40' } = req.query;
+    const data = await MarketDataService.getSectorAnalytics(sector, parseInt(limit as string, 10));
+    res.json({ success: true, data, timestamp: new Date().toISOString() });
+  }),
+
   getMarketMovers: asyncHandler(async (req: Request, res: Response) => {
     setCacheHeaders(res, 30);
     const { type = 'gainers', count = '10' } = req.query;
@@ -109,11 +117,19 @@ export const marketController = {
     setCacheHeaders(res, 300, 900);
     const { symbol } = req.params;
     const { period = '1mo' } = req.query;
-    const validPeriods = ['1d', '5d', '1mo', '3mo', '6mo', '1y'];
+    const validPeriods = ['15m', '1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y'];
     if (!validPeriods.includes(period as string))
       throw new AppError(`Invalid period. Use: ${validPeriods.join(', ')}`, 400);
 
     const data = await MarketDataService.getHistoricalData(symbol, period as string);
+    res.json({ success: true, data, timestamp: new Date().toISOString() });
+  }),
+
+  getStockResearch: asyncHandler(async (req: Request, res: Response) => {
+    setCacheHeaders(res, 300, 900);
+    const { symbol } = req.params;
+    const data = await MarketDataService.getStockResearch(symbol);
+    if (!data) throw new AppError('Symbol not found or no research data available', 404);
     res.json({ success: true, data, timestamp: new Date().toISOString() });
   }),
 

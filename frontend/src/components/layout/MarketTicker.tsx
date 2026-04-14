@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Wifi, WifiOff } from 'lucide-react';
 import { marketAPI } from '@/lib/api';
 import { formatCurrency, formatPercent } from '@/lib/format';
@@ -53,13 +53,15 @@ export function MarketTicker() {
 
   if (!items.length) {
     return (
-      <div
-        className="h-9 flex items-center px-4 gap-3 overflow-hidden"
-        style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}
-      >
+      <div className="ticker-bar">
+        <div className="ticker-inner">
+          <div className="topbar-pill">Preparing live market ribbon</div>
+          <div className="ticker-track" style={{ display: 'flex', gap: 10 }}>
         {[...Array(6)].map((_, i) => (
-          <div key={i} className="skeleton h-4 w-24 rounded" />
+            <div key={i} className="skeleton" style={{ height: 36, width: 128 }} />
         ))}
+          </div>
+        </div>
       </div>
     );
   }
@@ -67,45 +69,26 @@ export function MarketTicker() {
   const doubled = [...items, ...items];
 
   return (
-    <div
-      className="h-9 flex items-center overflow-hidden relative"
-      style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}
-    >
-      {/* Live / Polling badge */}
-      <div
-        className="shrink-0 flex items-center gap-1.5 px-3 border-r text-xs h-full"
-        style={{ borderColor: 'var(--border)', color: connected ? 'var(--green)' : 'var(--text-3)' }}
-      >
-        {connected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
-        <span className="font-semibold uppercase tracking-widest text-[9px]">
-          {connected ? 'Live' : 'Poll'}
-        </span>
-      </div>
+    <div className="ticker-bar">
+      <div className="ticker-inner">
+        <div className="topbar-pill" style={{ color: connected ? 'var(--green)' : 'var(--text-2)' }}>
+          {connected ? <Wifi style={{ width: 12, height: 12 }} /> : <WifiOff style={{ width: 12, height: 12 }} />}
+          {connected ? 'Streaming indices' : 'Polling indices'}
+        </div>
 
-      {/* Scrolling strip */}
-      <div className="flex-1 overflow-hidden">
-        <div
-          className="flex items-center gap-0"
-          style={{ animation: 'ticker-scroll 40s linear infinite', width: 'max-content' }}
-        >
+        <div className="ticker-track">
+          <div className="ticker-strip">
           {doubled.map((item, i) => {
             const up = item.changePercent >= 0;
             return (
-              <div
-                key={`${item.symbol}-${i}`}
-                className="flex items-center gap-2 px-4 py-0.5 border-r shrink-0"
-                style={{ borderColor: 'var(--border)' }}
-              >
-                <span className="font-semibold text-xs" style={{ color: 'var(--text-2)' }}>
+              <div key={`${item.symbol}-${i}`} className="ticker-chip">
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-2)' }}>
                   {item.shortName}
                 </span>
-                <span className="mono font-bold text-xs" style={{ color: 'var(--text-1)' }}>
+                <span className="mono" style={{ fontWeight: 700, color: 'var(--text-1)' }}>
                   {item.price > 0 ? formatCurrency(item.price).replace('₹', '') : '—'}
                 </span>
-                <span
-                  className="mono text-xs font-bold"
-                  style={{ color: up ? 'var(--green)' : 'var(--red)' }}
-                >
+                <span className="mono" style={{ fontWeight: 700, color: up ? 'var(--green)' : 'var(--red)' }}>
                   {item.price > 0 ? formatPercent(item.changePercent) : '—'}
                 </span>
               </div>
@@ -113,13 +96,7 @@ export function MarketTicker() {
           })}
         </div>
       </div>
-
-      <style>{`
-        @keyframes ticker-scroll {
-          0%   { transform: translateX(0); }
-          100% { transform: translateX(-50%); }
-        }
-      `}</style>
+      </div>
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { authLimiter } from '../middleware/rateLimiter.js';
 
 const router = Router();
 
+router.post('/workspace', authLimiter, authController.bootstrapWorkspace);
 router.post('/register', authLimiter, authController.register);
 router.post('/login', authLimiter, authController.login);
 router.get('/me', auth, authController.getMe);

@@ -5,560 +5,455 @@ import {
   Activity,
   ArrowDownRight,
   ArrowUpRight,
-  BarChart3,
-  Clock,
-  Flame,
-  Globe,
+  CandlestickChart,
   Layers,
+  LineChart,
   RefreshCw,
+  ShieldCheck,
+  Siren,
   TrendingDown,
   TrendingUp,
-  Wifi,
-  WifiOff,
+  type LucideIcon,
 } from 'lucide-react';
+import { HistoricalSeriesChart } from '@/components/charts/HistoricalSeriesChart';
 import { Sparkline } from '@/components/charts/Sparkline';
+import { TVWidget } from '@/components/charts/TVWidget';
 import { SymbolLink } from '@/components/ui/SymbolLink';
-import { marketAPI, type Index, type Quote } from '@/lib/api';
+import { EmptyPanel, MetricTile, PageHeader, SectionCard, TrendBadge } from '@/components/ui/page-kit';
+import { marketAPI, type Index, type Quote, type SectorOverview } from '@/lib/api';
 import { formatCurrency, formatIST, formatLargeNumber, formatPercent } from '@/lib/format';
 import { useMarketStream } from '@/lib/hooks/useMarketStream';
 
-type SectorStock = {
-  symbol: string;
-  name: string;
-  price: number;
-  change: number;
-  changePercent: number;
-  volume: number;
-  marketCap?: number;
-};
-
-type SectorSnapshot = {
-  name: string;
-  trend: string;
-  change: number;
-  advancers: number;
-  decliners: number;
-  unchanged: number;
-  stocks: SectorStock[];
-};
-
-type MarketSummaryData = {
+type MarketSummary = {
   indices: Index[];
   gainers: Quote[];
   losers: Quote[];
   mostActive: Quote[];
+  lastUpdated?: string;
+  marketStatus?: string;
 };
 
-const SECTOR_INDEX_MAP: Record<string, string> = {
-  Banking: 'NIFTY BANK',
-  IT: 'NIFTY IT',
-  Auto: 'NIFTY AUTO',
-  Metals: 'NIFTY METAL',
-  Pharma: 'NIFTY PHARMA',
-  Energy: 'NIFTY ENERGY',
-  FMCG: 'NIFTY FMCG',
-  Realty: 'NIFTY REALTY',
-  Telecom: 'NIFTY 50',
-  Infra: 'NIFTY INFRA',
-  NBFC: 'NIFTY BANK',
-};
-
-const EMPTY_SUMMARY: MarketSummaryData = {
+const EMPTY_SUMMARY: MarketSummary = {
   indices: [],
   gainers: [],
   losers: [],
   mostActive: [],
 };
 
-function normalizeSectorData(payload: any[]): SectorSnapshot[] {
-  return (payload || []).map((sector) => ({
-    name: sector.name,
-    trend: sector.trend || 'neutral',
-    change: Number(sector.change || 0),
-    advancers: Number(sector.advancers || 0),
-    decliners: Number(sector.decliners || 0),
-    unchanged: Number(sector.unchanged || 0),
-    stocks: (sector.stocks || []).map((stock: any) => ({
-      symbol: stock.symbol,
-      name: stock.name || stock.symbol,
-      price: Number(stock.price || 0),
-      change: Number(stock.change || 0),
-      changePercent: Number(stock.changePercent ?? stock.change ?? 0),
-      volume: Number(stock.volume || 0),
-      marketCap: Number(stock.marketCap || 0),
-    })),
-  }));
+type MarketTab = 'overview' | 'sectors' | 'movers' | 'charts';
+
+function toneFromNumber(value: number): 'positive' | 'negative' | 'warning' {
+  if (value > 0) return 'positive';
+  if (value < 0) return 'negative';
+  return 'warning';
 }
 
-function StatusBar({
+function StatusControls({
+  connected,
+  error,
   loading,
   lastUpdated,
-  error,
-  connected,
-  streamError,
   onRefresh,
 }: {
-  loading: boolean;
-  lastUpdated: Date | null;
-  error: string | null;
   connected: boolean;
-  streamError: string | null;
+  error: string | null;
+  loading: boolean;
+  lastUpdated: string | null;
   onRefresh: () => void;
 }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        {error && <span className="badge badge-red">{error}</span>}
-        {!error && streamError && <span className="badge badge-amber">Live stream degraded</span>}
-        {!error && !loading && <span className="badge badge-green">Native charts active</span>}
-        <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: connected ? 'var(--green)' : 'var(--text-3)' }}>
-          {connected ? <Wifi style={{ width: 11, height: 11 }} /> : <WifiOff style={{ width: 11, height: 11 }} />}
-          {connected ? 'Live stream' : 'Polling'}
-        </span>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        {lastUpdated && (
-          <span style={{ fontSize: 10, color: 'var(--text-3)', display: 'flex', alignItems: 'center', gap: 4 }}>
-            <Clock style={{ width: 10, height: 10 }} /> {formatIST(lastUpdated)}
-          </span>
-        )}
-        <button onClick={onRefresh} disabled={loading} className="btn btn-ghost" style={{ padding: '4px 8px' }}>
-          <RefreshCw style={{ width: 13, height: 13 }} className={loading ? 'anim-spin' : ''} />
-        </button>
-      </div>
+    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
+      <TrendBadge tone={connected ? 'positive' : 'warning'}>
+        <span className="pulse-dot" style={{ background: connected ? 'var(--green)' : 'var(--amber)' }} />
+        {connected ? 'Stream connected' : 'Delayed cache'}
+      </TrendBadge>
+      {error ? <TrendBadge tone="warning">{error}</TrendBadge> : null}
+      {lastUpdated ? <span className="topbar-pill">Updated {formatIST(new Date(lastUpdated))}</span> : null}
+      <button onClick={onRefresh} disabled={loading} className="btn btn-ghost">
+        <RefreshCw style={{ width: 14, height: 14 }} className={loading ? 'anim-spin' : ''} />
+        Refresh snapshot
+      </button>
     </div>
   );
 }
 
-function NativeChartCard({
-  symbol,
-  title,
-  subtitle,
-  price,
-  changePercent,
-  volumeLabel,
-  period = '1mo',
-}: {
-  symbol: string;
-  title: string;
-  subtitle: string;
-  price: number;
-  changePercent: number;
-  volumeLabel?: string;
-  period?: string;
-}) {
-  const up = changePercent >= 0;
+function IndexCard({ index }: { index: Index }) {
+  const positive = index.changePercent >= 0;
 
   return (
-    <SymbolLink
-      symbol={symbol}
-      className="card"
-      style={{
-        padding: 16,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 12,
-        textAlign: 'left',
-        background: 'linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01))',
-        border: `1px solid ${up ? 'rgba(34,197,94,0.16)' : 'rgba(239,68,68,0.16)'}`,
-      } as any}
-    >
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+    <SymbolLink symbol={index.symbol} className="metric-card" style={{ textAlign: 'left', padding: 18 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
         <div>
-          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-            {title}
-          </div>
-          <div className="mono" style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-1)', marginTop: 4 }}>
-            {price > 0 ? formatCurrency(price) : '—'}
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--text-2)', marginTop: 4 }}>{subtitle}</div>
+          <div className="stat-label">{index.shortName || index.symbol}</div>
+          <div className="metric-value">{index.price > 0 ? formatCurrency(index.price) : '—'}</div>
+          <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-3)' }}>{index.symbol}</div>
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <div className="mono" style={{ fontSize: 12, fontWeight: 700, color: up ? 'var(--green)' : 'var(--red)', display: 'flex', alignItems: 'center', gap: 3, justifyContent: 'flex-end' }}>
-            {up ? <ArrowUpRight style={{ width: 12, height: 12 }} /> : <ArrowDownRight style={{ width: 12, height: 12 }} />}
-            {formatPercent(changePercent)}
-          </div>
-          {volumeLabel && <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 4 }}>{volumeLabel}</div>}
-        </div>
+        <TrendBadge tone={positive ? 'positive' : 'negative'}>
+          {positive ? <ArrowUpRight style={{ width: 12, height: 12 }} /> : <ArrowDownRight style={{ width: 12, height: 12 }} />}
+          {formatPercent(index.changePercent)}
+        </TrendBadge>
       </div>
-      <div style={{ height: 82 }}>
-        <Sparkline symbol={symbol} period={period} height={82} width={220} />
+      <div style={{ height: 76, marginTop: 14 }}>
+        <Sparkline symbol={index.symbol} period="1mo" width={260} height={76} />
       </div>
-      <div style={{ fontSize: 10, color: 'var(--primary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-        Open in-app chart
+      <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 11, color: 'var(--text-2)' }}>
+        <span>Vol {index.volume > 0 ? formatLargeNumber(index.volume) : '—'}</span>
+        <span>{index.marketState || 'REGULAR'}</span>
       </div>
     </SymbolLink>
   );
 }
 
-function MoversTable({ data, loading }: { data: Quote[]; loading: boolean }) {
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {[...Array(5)].map((_, index) => <div key={index} className="skeleton h-9 rounded" />)}
-      </div>
-    );
-  }
-
-  if (!data.length) {
-    return <div style={{ textAlign: 'center', padding: '24px 0', fontSize: 12, color: 'var(--text-3)' }}>No data available</div>;
-  }
-
+function MoversList({ title, subtitle, icon: Icon, items }: {
+  title: string;
+  subtitle: string;
+  icon: LucideIcon;
+  items: Quote[];
+}) {
   return (
-    <div>
-      {data.map((stock, index) => {
-        const up = stock.changePercent >= 0;
-        return (
-          <div key={stock.symbol} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 4px', borderBottom: '1px solid rgba(30,42,64,0.5)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-              <span style={{ fontSize: 10, color: 'var(--text-3)', width: 16, flexShrink: 0 }} className="mono">{index + 1}</span>
-              <SymbolLink symbol={stock.symbol} className="text-left" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 } as any}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)' }}>{stock.symbol}</div>
-                <div style={{ fontSize: 10, color: 'var(--text-2)', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{stock.name}</div>
+    <SectionCard title={title} subtitle={subtitle} icon={Icon}>
+      <div className="stack-12">
+        {items.length ? items.slice(0, 8).map((item, index) => (
+          <div key={item.symbol} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+              <span className="mono dim" style={{ width: 16 }}>{index + 1}</span>
+              <SymbolLink symbol={item.symbol} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}>
+                <div className="mono" style={{ fontSize: 12, fontWeight: 700 }}>{item.symbol}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-3)', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
               </SymbolLink>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
-              <span className="mono" style={{ fontSize: 12, color: 'var(--text-1)' }}>{formatCurrency(stock.price)}</span>
-              <span className="mono" style={{ fontSize: 12, fontWeight: 700, color: up ? 'var(--green)' : 'var(--red)' }}>
-                {formatPercent(stock.changePercent)}
-              </span>
+            <div style={{ textAlign: 'right' }}>
+              <div className="mono" style={{ fontSize: 12 }}>{formatCurrency(item.price)}</div>
+              <div className="mono" style={{ fontSize: 12, color: item.changePercent >= 0 ? 'var(--green)' : 'var(--red)' }}>{formatPercent(item.changePercent)}</div>
             </div>
           </div>
-        );
-      })}
-    </div>
+        )) : <EmptyPanel title="Waiting for quotes" description="This leaderboard fills as soon as delayed cached prices are available." icon={Siren} />}
+      </div>
+    </SectionCard>
   );
 }
 
-function OverviewSection({
-  summary,
-  loading,
-}: {
-  summary: MarketSummaryData;
-  loading: boolean;
-}) {
-  const mainIndices = summary.indices.slice(0, 3);
-  const sectorIndices = summary.indices.slice(3);
-
+function SectorBoard({ sectors }: { sectors: SectorOverview[] }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div>
-        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>In-App Index Charts</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
-          {(loading ? [...Array(3)] : mainIndices).map((entry: Index | undefined, index) => (
-            entry ? (
-              <NativeChartCard
-                key={entry.rawSymbol || entry.symbol}
-                symbol={entry.symbol}
-                title={entry.symbol}
-                subtitle={entry.shortName || entry.symbol}
-                price={entry.price}
-                changePercent={entry.changePercent}
-                volumeLabel={entry.volume > 0 ? `Vol ${formatLargeNumber(entry.volume)}` : undefined}
-              />
-            ) : (
-              <div key={index} className="card" style={{ padding: 16 }}>
-                <div className="skeleton h-4 w-24 rounded" />
-                <div className="skeleton h-7 w-28 rounded" style={{ marginTop: 8 }} />
-                <div className="skeleton h-20 w-full rounded" style={{ marginTop: 12 }} />
-              </div>
-            )
-          ))}
-        </div>
-      </div>
+    <SectionCard
+      title="Sector Breadth"
+      subtitle="Bullish and bearish sectors first, with leaders from each market pocket"
+      icon={Layers}
+    >
+      <div className="grid-fit-280">
+        {sectors.map((sector) => {
+          const tone = sector.trend === 'bullish' ? 'positive' : sector.trend === 'bearish' ? 'negative' : 'warning';
+          const proxySymbol = sector.leader?.symbol || sector.stocks[0]?.symbol || 'NIFTY 50';
 
-      <div>
-        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>Sector Indices</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
-          {sectorIndices.map((index) => (
-            <NativeChartCard
-              key={index.rawSymbol || index.symbol}
-              symbol={index.symbol}
-              title={index.shortName || index.symbol}
-              subtitle={index.symbol}
-              price={index.price}
-              changePercent={index.changePercent}
-              volumeLabel={index.volume > 0 ? `Vol ${formatLargeNumber(index.volume)}` : undefined}
-            />
-          ))}
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
-        {[
-          { title: 'Top Gainers', data: summary.gainers, icon: TrendingUp, color: 'var(--green)' },
-          { title: 'Top Losers', data: summary.losers, icon: TrendingDown, color: 'var(--red)' },
-          { title: 'Most Active', data: summary.mostActive, icon: Activity, color: 'var(--amber)' },
-        ].map(({ title, data, icon: Icon, color }) => (
-          <div key={title} className="card">
-            <div className="card-header">
-              <Icon style={{ width: 14, height: 14, color }} />
-              <h3>{title}</h3>
-            </div>
-            <div style={{ padding: '8px 12px' }}>
-              <MoversTable data={data} loading={loading} />
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function SectorsSection({ sectors, loading }: { sectors: SectorSnapshot[]; loading: boolean }) {
-  if (loading) {
-    return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>{[...Array(6)].map((_, index) => <div key={index} className="card skeleton" style={{ height: 220 }} />)}</div>;
-  }
-
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
-      {sectors.map((sector) => {
-        const proxySymbol = SECTOR_INDEX_MAP[sector.name] || sector.stocks[0]?.symbol || 'NIFTY 50';
-        const leaders = [...sector.stocks]
-          .filter((stock) => stock.price > 0)
-          .sort((left, right) => Math.abs(right.changePercent) - Math.abs(left.changePercent))
-          .slice(0, 4);
-        const up = sector.change >= 0;
-
-        return (
-          <div key={sector.name} className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-1)' }}>{sector.name}</div>
-                <div className="mono" style={{ fontSize: 18, fontWeight: 700, color: up ? 'var(--green)' : 'var(--red)', marginTop: 4 }}>
-                  {formatPercent(sector.change)}
+          return (
+            <div key={sector.sector} className="metric-card" style={{ minHeight: 250 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+                <div>
+                  <div className="stat-label">{sector.sector}</div>
+                  <div className="metric-value" style={{ color: tone === 'positive' ? 'var(--green)' : tone === 'negative' ? 'var(--red)' : 'var(--amber)' }}>
+                    {formatPercent(sector.averageChangePercent)}
+                  </div>
                 </div>
-                <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 4 }}>
-                  ▲ {sector.advancers} • ▼ {sector.decliners} • = {sector.unchanged}
-                </div>
+                <TrendBadge tone={tone}>{sector.trend}</TrendBadge>
               </div>
-              <div style={{ width: 120, height: 74 }}>
-                <Sparkline symbol={proxySymbol} period="1mo" width={120} height={74} />
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10, marginTop: 14 }}>
+                <MetricTile label="Bullish" value={sector.bullishCount} tone="positive" />
+                <MetricTile label="Bearish" value={sector.bearishCount} tone="negative" />
+                <MetricTile label="Breadth" value={`${sector.breadth.toFixed(0)}%`} tone={tone} />
               </div>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {leaders.length ? leaders.map((stock) => {
-                const stockUp = stock.changePercent >= 0;
-                return (
-                  <div key={stock.symbol} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                    <SymbolLink symbol={stock.symbol} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left' } as any}>
-                      <div className="mono" style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)' }}>{stock.symbol}</div>
-                      <div style={{ fontSize: 10, color: 'var(--text-2)' }}>{stock.name}</div>
+
+              <div style={{ height: 64, marginTop: 14 }}>
+                <Sparkline symbol={proxySymbol} period="1mo" width={260} height={64} />
+              </div>
+
+              <div className="stack-8" style={{ marginTop: 14 }}>
+                {sector.stocks.slice(0, 4).map((stock) => (
+                  <div key={stock.symbol} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                    <SymbolLink symbol={stock.symbol} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}>
+                      <div className="mono" style={{ fontSize: 12, fontWeight: 700 }}>{stock.symbol}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{stock.name}</div>
                     </SymbolLink>
                     <div style={{ textAlign: 'right' }}>
-                      <div className="mono" style={{ fontSize: 11, color: 'var(--text-1)' }}>{formatCurrency(stock.price)}</div>
-                      <div className="mono" style={{ fontSize: 11, fontWeight: 700, color: stockUp ? 'var(--green)' : 'var(--red)' }}>{formatPercent(stock.changePercent)}</div>
+                      <div className="mono" style={{ fontSize: 12 }}>{formatCurrency(stock.price)}</div>
+                      <div className="mono" style={{ fontSize: 12, color: stock.changePercent >= 0 ? 'var(--green)' : 'var(--red)' }}>{formatPercent(stock.changePercent)}</div>
                     </div>
                   </div>
-                );
-              }) : <div style={{ fontSize: 12, color: 'var(--text-3)' }}>No sector constituents available.</div>}
-            </div>
-            <SymbolLink symbol={proxySymbol} className="btn btn-ghost" style={{ justifyContent: 'center' } as any}>
-              Open sector chart
-            </SymbolLink>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function HeatmapSection({ sectors }: { sectors: SectorSnapshot[] }) {
-  const tiles = useMemo(
-    () => sectors
-      .flatMap((sector) => sector.stocks.map((stock) => ({ ...stock, sector: sector.name })))
-      .filter((stock) => stock.price > 0)
-      .sort((left, right) => Math.abs(right.changePercent) - Math.abs(left.changePercent))
-      .slice(0, 36),
-    [sectors],
-  );
-
-  return (
-    <div className="card" style={{ padding: 16 }}>
-      <div className="card-header">
-        <Flame style={{ width: 14, height: 14, color: 'var(--amber)' }} />
-        <h3>Native Heatmap</h3>
-      </div>
-      {tiles.length ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8 }}>
-          {tiles.map((stock) => {
-            const intensity = Math.min(Math.abs(stock.changePercent) / 5, 1);
-            const background = stock.changePercent >= 0
-              ? `rgba(34,197,94,${0.12 + intensity * 0.25})`
-              : `rgba(239,68,68,${0.12 + intensity * 0.25})`;
-
-            return (
-              <SymbolLink
-                key={stock.symbol}
-                symbol={stock.symbol}
-                className="card"
-                style={{
-                  padding: 12,
-                  textAlign: 'left',
-                  background,
-                  border: '1px solid rgba(255,255,255,0.06)',
-                  minHeight: 92,
-                } as any}
-              >
-                <div className="mono" style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)' }}>{stock.symbol}</div>
-                <div style={{ fontSize: 10, color: 'var(--text-2)', marginTop: 4 }}>{stock.sector}</div>
-                <div className="mono" style={{ fontSize: 11, color: 'var(--text-1)', marginTop: 10 }}>{formatCurrency(stock.price)}</div>
-                <div className="mono" style={{ fontSize: 11, fontWeight: 700, color: stock.changePercent >= 0 ? 'var(--green)' : 'var(--red)', marginTop: 4 }}>
-                  {formatPercent(stock.changePercent)}
-                </div>
-              </SymbolLink>
-            );
-          })}
-        </div>
-      ) : (
-        <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-3)', fontSize: 12 }}>Heatmap data will appear once live sector quotes arrive.</div>
-      )}
-    </div>
-  );
-}
-
-function HotlistsSection({ summary, sectors }: { summary: MarketSummaryData; sectors: SectorSnapshot[] }) {
-  const sectorLeaders = useMemo(
-    () => sectors
-      .filter((sector) => sector.stocks.some((stock) => stock.price > 0))
-      .sort((left, right) => right.change - left.change)
-      .slice(0, 6),
-    [sectors],
-  );
-
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
-      <div className="card">
-        <div className="card-header">
-          <TrendingUp style={{ width: 14, height: 14, color: 'var(--green)' }} />
-          <h3>Momentum Board</h3>
-        </div>
-        <div style={{ padding: '8px 12px' }}>
-          <MoversTable data={[...summary.gainers.slice(0, 3), ...summary.mostActive.slice(0, 2)]} loading={false} />
-        </div>
-      </div>
-      <div className="card" style={{ padding: 16 }}>
-        <div className="card-header">
-          <Layers style={{ width: 14, height: 14, color: 'var(--sky)' }} />
-          <h3>Leading Sectors</h3>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {sectorLeaders.map((sector) => (
-            <SymbolLink key={sector.name} symbol={SECTOR_INDEX_MAP[sector.name] || sector.stocks[0]?.symbol || 'NIFTY 50'} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 10, padding: 12, textAlign: 'left' } as any}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-1)' }}>{sector.name}</div>
-                  <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 4 }}>{sector.stocks.length} tracked stocks</div>
-                </div>
-                <div className="mono" style={{ fontSize: 12, fontWeight: 700, color: sector.change >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                  {formatPercent(sector.change)}
-                </div>
+                ))}
               </div>
-            </SymbolLink>
-          ))}
-        </div>
+            </div>
+          );
+        })}
       </div>
-    </div>
+    </SectionCard>
   );
 }
 
-const SECTIONS = [
-  { id: 'overview', label: 'Overview', icon: Globe },
-  { id: 'sectors', label: 'Sectors', icon: Layers },
-  { id: 'heatmap', label: 'Heatmap', icon: Flame },
-  { id: 'hotlists', label: 'Hotlists', icon: BarChart3 },
-];
+function SectorStrip({ title, sectors }: { title: string; sectors: SectorOverview[] }) {
+  return (
+    <div className="stack-8">
+      <div className="stat-label">{title}</div>
+      {sectors.length ? sectors.map((sector) => (
+        <div key={sector.sector} className="metric-card" style={{ padding: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700 }}>{sector.sector}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>
+                {sector.stockCount} stocks tracked
+              </div>
+            </div>
+            <div className="mono" style={{ fontSize: 12, color: sector.averageChangePercent >= 0 ? 'var(--green)' : 'var(--red)' }}>
+              {formatPercent(sector.averageChangePercent)}
+            </div>
+          </div>
+        </div>
+      )) : <div className="metric-footnote">No sector movement available yet.</div>}
+    </div>
+  );
+}
 
 export default function MarketPage() {
-  const [active, setActive] = useState('overview');
-  const [summary, setSummary] = useState<MarketSummaryData>(EMPTY_SUMMARY);
-  const [sectors, setSectors] = useState<SectorSnapshot[]>([]);
+  const [summary, setSummary] = useState<MarketSummary>(EMPTY_SUMMARY);
+  const [sectors, setSectors] = useState<SectorOverview[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sectorLoading, setSectorLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const { data: stream, connected, error: streamError } = useMarketStream(true);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<MarketTab>('overview');
+  const [benchmarkSymbol, setBenchmarkSymbol] = useState('NIFTY 50');
+  const [benchmarkPeriod, setBenchmarkPeriod] = useState<'1mo' | '3mo' | '1y' | '5y'>('1y');
+  const { data: stream, connected, error: streamError, lastEventAt } = useMarketStream(true);
 
-  const fetchData = useCallback(async () => {
-    setLoading(summary.indices.length === 0);
-    setSectorLoading(sectors.length === 0);
+  const loadDashboard = useCallback(async () => {
+    setLoading(true);
     try {
-      const [summaryResult, sectorResult] = await Promise.allSettled([
-        marketAPI.getMarketSummary(),
+      const [summaryData, sectorData] = await Promise.all([
+        marketAPI.getMarketSummary() as Promise<MarketSummary>,
         marketAPI.getAllSectorsData(),
       ]);
-
-      if (summaryResult.status === 'fulfilled') {
-        setSummary(summaryResult.value || EMPTY_SUMMARY);
-      }
-
-      if (sectorResult.status === 'fulfilled') {
-        setSectors(normalizeSectorData(sectorResult.value));
-      }
-
-      if (summaryResult.status === 'rejected' && sectorResult.status === 'rejected') {
-        throw new Error('Market data is temporarily unavailable.');
-      }
-
+      setSummary(summaryData || EMPTY_SUMMARY);
+      setSectors(sectorData || []);
+      setLastUpdated(new Date().toISOString());
       setError(null);
-      setLastUpdated(new Date());
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Failed to load market data.');
+      setError(nextError instanceof Error ? nextError.message : 'Failed to load the market dashboard.');
     } finally {
       setLoading(false);
-      setSectorLoading(false);
     }
-  }, [summary.indices.length, sectors.length]);
+  }, []);
 
   useEffect(() => {
-    fetchData();
-    const timer = setInterval(fetchData, 30000);
-    return () => clearInterval(timer);
-  }, [fetchData]);
+    loadDashboard();
+  }, [loadDashboard]);
 
   useEffect(() => {
     if (!stream) return;
 
-    if ((stream.type === 'market_update' || stream.type === 'indices_tick') && stream.indices?.some((index: Index) => index.price > 0)) {
-      setSummary((previous) => ({
-        indices: stream.indices || previous.indices,
-        gainers: stream.gainers?.length ? stream.gainers : previous.gainers,
-        losers: stream.losers?.length ? stream.losers : previous.losers,
-        mostActive: stream.mostActive?.length ? stream.mostActive : previous.mostActive,
+    if (stream.type === 'market_update' || stream.type === 'indices_tick') {
+      setSummary((current) => ({
+        ...current,
+        indices: stream.indices || current.indices,
+        gainers: stream.gainers || current.gainers,
+        losers: stream.losers || current.losers,
+        mostActive: stream.mostActive || current.mostActive,
       }));
-      setLastUpdated(new Date());
     }
   }, [stream]);
 
+  const headlineIndices = useMemo(() => summary.indices.slice(0, 4), [summary.indices]);
+  const averageIndexMove = useMemo(() => {
+    if (!summary.indices.length) return 0;
+    return summary.indices.reduce((sum, index) => sum + index.changePercent, 0) / summary.indices.length;
+  }, [summary.indices]);
+  const breadthBias = useMemo(() => {
+    const bullish = sectors.filter((sector) => sector.trend === 'bullish').length;
+    const bearish = sectors.filter((sector) => sector.trend === 'bearish').length;
+    return bullish - bearish;
+  }, [sectors]);
+  const bullishSectors = useMemo(() => sectors.filter((sector) => sector.trend === 'bullish').slice(0, 3), [sectors]);
+  const bearishSectors = useMemo(() => sectors.filter((sector) => sector.trend === 'bearish').slice(0, 3), [sectors]);
+
+  useEffect(() => {
+    if (!summary.indices.length) return;
+    if (!summary.indices.some((entry) => entry.symbol === benchmarkSymbol)) {
+      setBenchmarkSymbol(summary.indices[0].symbol);
+    }
+  }, [benchmarkSymbol, summary.indices]);
+
+  const benchmarkIndex = useMemo(
+    () => summary.indices.find((entry) => entry.symbol === benchmarkSymbol) || headlineIndices[0] || null,
+    [benchmarkSymbol, headlineIndices, summary.indices],
+  );
+
   return (
     <div className="page">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-        <div>
-          <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-1)', marginBottom: 2 }}>Market Overview</h1>
-          <p style={{ fontSize: 12, color: 'var(--text-2)' }}>Fast native market views with in-app charts for NSE & BSE</p>
-        </div>
-        <div className="tab-group">
-          {SECTIONS.map(({ id, label, icon: Icon }) => (
-            <button key={id} onClick={() => setActive(id)} className={`tab ${active === id ? 'tab-active' : ''}`}>
-              <Icon style={{ width: 13, height: 13 }} /> {label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <StatusBar
-        loading={loading || sectorLoading}
-        lastUpdated={lastUpdated}
-        error={error}
-        connected={connected}
-        streamError={streamError}
-        onRefresh={fetchData}
+      <PageHeader
+        kicker="Command Center"
+        title="Professional Indian market overview"
+        description="A production-style command center built around delayed Yahoo Finance quotes, TradingView charting, sector rotation, and cached movers. The pipeline is intentionally rate-safe so it can scale without tripping public market-data limits."
+        actions={
+          <StatusControls
+            connected={connected}
+            error={error || streamError}
+            loading={loading}
+            lastUpdated={lastEventAt || lastUpdated}
+            onRefresh={loadDashboard}
+          />
+        }
       />
 
-      {active === 'overview' && <OverviewSection summary={summary} loading={loading} />}
-      {active === 'sectors' && <SectorsSection sectors={sectors} loading={sectorLoading} />}
-      {active === 'heatmap' && <HeatmapSection sectors={sectors} />}
-      {active === 'hotlists' && <HotlistsSection summary={summary} sectors={sectors} />}
+      <div className="grid-fit-220">
+        <MetricTile
+          label="Market regime"
+          value={summary.marketStatus || 'REGULAR'}
+          tone="primary"
+          icon={ShieldCheck}
+          subtext="Derived from the latest headline-index snapshot"
+        />
+        <MetricTile
+          label="Average index move"
+          value={formatPercent(averageIndexMove)}
+          tone={toneFromNumber(averageIndexMove)}
+          icon={Activity}
+          subtext="Mean of the tracked benchmark basket"
+        />
+        <MetricTile
+          label="Sector breadth bias"
+          value={breadthBias >= 0 ? `+${breadthBias}` : breadthBias}
+          tone={breadthBias >= 0 ? 'positive' : 'negative'}
+          icon={Layers}
+          subtext="Bullish sectors minus bearish sectors"
+        />
+        <MetricTile
+          label="Most active print"
+          value={summary.mostActive[0] ? formatLargeNumber(summary.mostActive[0].volume * summary.mostActive[0].price) : '—'}
+          tone="warning"
+          icon={CandlestickChart}
+          subtext="Top visible turnover in the tracked universe"
+        />
+      </div>
+
+      <div className="tab-group" style={{ alignSelf: 'flex-start' }}>
+        {[
+          { id: 'overview', label: 'Overview', icon: Activity },
+          { id: 'sectors', label: 'Sectors', icon: Layers },
+          { id: 'movers', label: 'Movers', icon: TrendingUp },
+          { id: 'charts', label: 'Charts', icon: CandlestickChart },
+        ].map((tab) => {
+          const Icon = tab.icon;
+          return (
+            <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id as MarketTab)} className={`tab ${activeTab === tab.id ? 'tab-active' : ''}`}>
+              <Icon style={{ width: 14, height: 14 }} />
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {activeTab === 'overview' ? (
+        <div className="stack-16">
+          <SectionCard title="Headline Indices" subtitle="Cleaner entry points into the most important benchmarks" icon={CandlestickChart}>
+            {headlineIndices.length ? (
+              <div className="grid-fit-280">
+                {headlineIndices.map((index) => <IndexCard key={index.symbol} index={index} />)}
+              </div>
+            ) : (
+              <EmptyPanel title="Indices unavailable" description="The dashboard is waiting for its first cached summary snapshot. Retry refresh or wait for the live stream to reconnect." icon={Siren} />
+            )}
+          </SectionCard>
+
+          <SectionCard title="Benchmark Line Board" subtitle="Overview stays on line charts for readability while the full chart workspace remains available under the chart tab" icon={LineChart}>
+            {benchmarkIndex ? (
+              <div className="stack-16">
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <div>
+                    <div className="stat-label">Benchmark focus</div>
+                    <div className="metric-value">{benchmarkIndex.shortName || benchmarkIndex.symbol}</div>
+                    <div className="metric-footnote">{benchmarkIndex.symbol}</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <TrendBadge tone={benchmarkIndex.changePercent >= 0 ? 'positive' : 'negative'}>{formatPercent(benchmarkIndex.changePercent)}</TrendBadge>
+                    <TrendBadge tone="primary">{benchmarkIndex.marketState || 'REGULAR'}</TrendBadge>
+                  </div>
+                </div>
+
+                <div className="tab-group">
+                  {headlineIndices.map((index) => (
+                    <button key={index.symbol} type="button" onClick={() => setBenchmarkSymbol(index.symbol)} className={`tab ${benchmarkSymbol === index.symbol ? 'tab-active' : ''}`}>
+                      {index.shortName || index.symbol}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="tab-group">
+                  {[
+                    { id: '1mo', label: '1M' },
+                    { id: '3mo', label: '3M' },
+                    { id: '1y', label: '1Y' },
+                    { id: '5y', label: '5Y' },
+                  ].map((entry) => (
+                    <button key={entry.id} type="button" onClick={() => setBenchmarkPeriod(entry.id as '1mo' | '3mo' | '1y' | '5y')} className={`tab ${benchmarkPeriod === entry.id ? 'tab-active' : ''}`}>
+                      {entry.label}
+                    </button>
+                  ))}
+                </div>
+
+                <HistoricalSeriesChart symbol={benchmarkIndex.symbol} period={benchmarkPeriod} variant="line" height={380} />
+              </div>
+            ) : (
+              <EmptyPanel title="Benchmark preview unavailable" description="Load a summary snapshot first to populate the benchmark line board." icon={LineChart} />
+            )}
+          </SectionCard>
+        </div>
+      ) : null}
+
+      {activeTab === 'sectors' ? (
+        <div className="two-column-layout">
+          <SectorBoard sectors={sectors} />
+          <SectionCard title="Rotation Snapshot" subtitle="Fast separation between the strongest and weakest sector pockets" icon={Layers}>
+            <div className="stack-16">
+              <SectorStrip title="Bullish sectors" sectors={bullishSectors} />
+              <SectorStrip title="Bearish sectors" sectors={bearishSectors} />
+            </div>
+          </SectionCard>
+        </div>
+      ) : null}
+
+      {activeTab === 'movers' ? (
+        <div className="grid-fit-320">
+          <MoversList title="Top Gainers" subtitle="Highest positive day-change names in the tracked basket" icon={TrendingUp} items={summary.gainers} />
+          <MoversList title="Top Losers" subtitle="Weakest day-change names in the tracked basket" icon={TrendingDown} items={summary.losers} />
+          <MoversList title="Most Active" subtitle="Highest visible turnover across the tracked basket" icon={Activity} items={summary.mostActive} />
+        </div>
+      ) : null}
+
+      {activeTab === 'charts' ? (
+        <SectionCard title="Chart Workspace" subtitle="Candlestick-heavy multi-benchmark workspace with TradingView on the overview side and the in-app modal handling lower timeframe symbol drill-down" icon={CandlestickChart}>
+          <div style={{ height: 480 }}>
+            <TVWidget
+              src="https://s3.tradingview.com/external-embedding/embed-widget-symbol-overview.js"
+              config={{
+                symbols: [
+                  ['NIFTY 50', '^NSEI'],
+                  ['BANK NIFTY', '^NSEBANK'],
+                  ['NIFTY IT', '^CNXIT'],
+                  ['NIFTY PHARMA', '^CNXPHARMA'],
+                ],
+                chartType: 'candlesticks',
+                dateRange: '3M',
+                colorTheme: 'dark',
+                locale: 'en',
+                showVolume: true,
+                showMA: true,
+                hideDateRanges: false,
+                hideMarketStatus: false,
+                hideSymbolLogo: false,
+                scalePosition: 'right',
+                scaleMode: 'Normal',
+              }}
+            />
+          </div>
+        </SectionCard>
+      ) : null}
     </div>
   );
 }

@@ -3,7 +3,7 @@ import cors        from 'cors';
 import helmet      from 'helmet';
 import compression from 'compression';
 import morgan      from 'morgan';
-import { config, getUpstoxAuthMode }  from './config/index.js';
+import { config }  from './config/index.js';
 import { connectDB, isDbConnected } from './config/database.js';
 import { logger }    from './utils/logger.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
@@ -39,36 +39,28 @@ app.use(config.isDev ? morgan('dev') : morgan('combined', {
 // ── Health ────────────────────────────────────────────────────────────────────
 app.get('/api/health', (_req: Request, res: Response) => {
   const providers = MarketDataService.getProviderHealth();
-  const upstoxAuthMode = getUpstoxAuthMode(config);
-  const upstoxConfigured = upstoxAuthMode !== 'missing' && upstoxAuthMode !== 'credentials_only';
-  const newsConfigured = Boolean(config.newsApiKey);
   const universe = MarketUniverseService.getStatus();
-  const degraded = !isDbConnected() || !upstoxConfigured || Boolean(providers.upstox.lastAttemptAt && !providers.upstox.ok);
+  const degraded = !isDbConnected() || Boolean(providers.yahoo.lastAttemptAt && !providers.yahoo.ok);
 
   res.json({
     status: degraded ? 'degraded' : 'ok',
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
     environment: config.nodeEnv,
-    demoMode: config.demoMode,
     services: {
       database: { connected: isDbConnected() },
       providers: {
-        upstox: {
-          ...providers.upstox,
-          configured: upstoxConfigured,
-          authMode: upstoxAuthMode,
-          warning: upstoxAuthMode === 'access_token_via_auth_code_field'
-            ? 'UPSTOX_AUTH_CODE currently contains an access token. Move it to UPSTOX_ACCESS_TOKEN.'
-            : upstoxAuthMode === 'auth_code'
-              ? 'UPSTOX_AUTH_CODE is single-use. Expect to refresh it after each new OAuth authorization.'
-              : null,
+        yahoo: {
+          ...providers.yahoo,
+          configured: true,
+          mode: 'public-delayed-cache',
+          warning: 'Yahoo Finance is used with delayed cached market data to stay within public API limits.',
         },
       },
       marketUniverse: universe,
       news: {
-        configured: newsConfigured,
-        provider: newsConfigured ? 'newsapi' : config.demoMode ? 'demo' : 'disabled',
+        configured: true,
+        provider: 'rss',
       },
     },
   });

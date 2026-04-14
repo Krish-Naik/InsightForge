@@ -27,6 +27,13 @@ export interface UniverseStock {
   instrumentKeys?: Partial<Record<'NSE' | 'BSE', string>>;
 }
 
+export interface UniverseSectorGroup {
+  sector: string;
+  stocks: UniverseStock[];
+  symbols: string[];
+  stockCount: number;
+}
+
 interface UniverseCacheState {
   data: UniverseStock[];
   fetchedAt: number;
@@ -118,16 +125,66 @@ function inferSectors(seed: MarketStockDefinition | undefined, industry?: string
 
   if (source.includes('BANK') || source.includes('FINANCIAL SERVICE')) return ['Banking'];
   if (source.includes('NBFC') || source.includes('FINANCE')) return ['NBFC'];
+  if (source.includes('INSURANCE')) return ['Insurance'];
   if (source.includes('SOFTWARE') || source.includes('IT ') || source.includes('TECH')) return ['IT'];
   if (source.includes('AUTO') || source.includes('AUTOMOBILE')) return ['Auto'];
   if (source.includes('STEEL') || source.includes('METAL') || source.includes('MINING')) return ['Metals'];
   if (source.includes('PHARMA') || source.includes('HEALTHCARE') || source.includes('DRUG')) return ['Pharma'];
+  if (source.includes('CHEMICAL') || source.includes('FERTILIZER') || source.includes('SPECIALITY')) return ['Chemicals'];
+  if (source.includes('CEMENT') || source.includes('BUILDING MATERIAL')) return ['Cement'];
+  if (source.includes('CAPITAL GOODS') || source.includes('ENGINEERING EQUIPMENT') || source.includes('INDUSTRIAL')) return ['Capital Goods'];
   if (source.includes('POWER') || source.includes('ENERGY') || source.includes('OIL') || source.includes('GAS')) return ['Energy'];
   if (source.includes('FMCG') || source.includes('CONSUMER') || source.includes('FOOD')) return ['FMCG'];
-  if (source.includes('REALTY') || source.includes('REAL ESTATE')) return ['Realty'];
+  if (source.includes('RETAIL')) return ['Retail'];
+  if (source.includes('MEDIA') || source.includes('ENTERTAINMENT')) return ['Media'];
+  if (source.includes('TEXTILE') || source.includes('APPAREL') || source.includes('GARMENT')) return ['Textiles'];
+  if (source.includes('LOGISTIC') || source.includes('SHIPPING') || source.includes('TRANSPORT') || source.includes('RAIL')) return ['Logistics'];
+  if (source.includes('AIRLINE') || source.includes('AVIATION')) return ['Aviation'];
+  if (source.includes('PAPER') || source.includes('FOREST')) return ['Paper'];
   if (source.includes('TELECOM')) return ['Telecom'];
+  if (source.includes('REALTY') || source.includes('REAL ESTATE')) return ['Realty'];
   if (source.includes('INFRA') || source.includes('CONSTRUCTION') || source.includes('ENGINEERING')) return ['Infra'];
-  return [];
+  if (source.includes('ELECTRIC') || source.includes('ELECTRONIC') || source.includes('SEMICONDUCTOR')) return ['Electronics'];
+
+  return [source
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
+    .join(' ')
+  ];
+}
+
+function sortUniverseStocks(left: UniverseStock, right: UniverseStock): number {
+  return Number(right.inNifty50) - Number(left.inNifty50)
+    || Number(right.exchange.includes('NSE')) - Number(left.exchange.includes('NSE'))
+    || left.symbol.localeCompare(right.symbol);
+}
+
+function buildSectorGroups(universe: UniverseStock[]): UniverseSectorGroup[] {
+  const grouped = new Map<string, UniverseStock[]>();
+
+  for (const stock of universe) {
+    for (const sector of stock.sectors || []) {
+      const normalized = sector.trim();
+      if (!normalized) continue;
+      const bucket = grouped.get(normalized) || [];
+      bucket.push(stock);
+      grouped.set(normalized, bucket);
+    }
+  }
+
+  return [...grouped.entries()]
+    .map(([sector, stocks]) => {
+      const ordered = [...stocks].sort(sortUniverseStocks);
+      return {
+        sector,
+        stocks: ordered,
+        symbols: ordered.map((stock) => stock.symbol),
+        stockCount: ordered.length,
+      };
+    })
+    .sort((left, right) => right.stockCount - left.stockCount || left.sector.localeCompare(right.sector));
 }
 
 function decodeCompressedJson<T>(payload: ArrayBuffer): T {
@@ -410,6 +467,22 @@ export class MarketUniverseService {
     }
 
     return resolved;
+  }
+
+  static async getSectorGroups(): Promise<UniverseSectorGroup[]> {
+    const universe = await this.getUniverse();
+    return buildSectorGroups(universe);
+  }
+
+  static async getStocksBySector(sector: string, limit = 80): Promise<UniverseStock[]> {
+    const normalized = normalizeSearchValue(sector);
+    if (!normalized) return [];
+
+    const groups = await this.getSectorGroups();
+    const group = groups.find((entry) => normalizeSearchValue(entry.sector) === normalized);
+    if (!group) return [];
+
+    return group.stocks.slice(0, limit);
   }
 
   static getStatus() {

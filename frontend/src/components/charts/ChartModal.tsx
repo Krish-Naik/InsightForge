@@ -14,12 +14,44 @@ const PERIODS = [
   { label: '1Y', value: '1y' },
 ];
 
+function toChartTime(value: string): number | null {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return null;
+  return Math.floor(timestamp / 1000);
+}
+
+function calculateSma(values: number[], period: number): Array<number | null> {
+  if (!values.length) return [];
+
+  return values.map((_, index) => {
+    if (index + 1 < period) return null;
+    const window = values.slice(index - period + 1, index + 1);
+    return window.reduce((sum, entry) => sum + entry, 0) / window.length;
+  });
+}
+
+function calculateEma(values: number[], period: number): Array<number | null> {
+  if (!values.length) return [];
+
+  const multiplier = 2 / (period + 1);
+  let ema = values[0];
+
+  return values.map((value, index) => {
+    if (index === 0) return value;
+    ema = (value - ema) * multiplier + ema;
+    return index + 1 < period ? null : ema;
+  });
+}
+
 function ChartModalInner() {
   const { activeSymbol, exchange, closeChart } = useChart();
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<any>(null);
   const candleRef = useRef<any>(null);
   const volRef = useRef<any>(null);
+  const sma20Ref = useRef<any>(null);
+  const sma50Ref = useRef<any>(null);
+  const ema21Ref = useRef<any>(null);
   const [full, setFull] = useState(false);
   const [period, setPeriod] = useState('3mo');
   const [loading, setLoading] = useState(false);
@@ -45,24 +77,50 @@ function ChartModalInner() {
 
       candleRef.current.setData([]);
       volRef.current?.setData([]);
+      sma20Ref.current?.setData([]);
+      sma50Ref.current?.setData([]);
+      ema21Ref.current?.setData([]);
 
       const bars = historical
-          .map((d) => ({
-            time: (d.date ?? '').split('T')[0] as any,
-            open: +d.open, high: +d.high, low: +d.low, close: +d.close,
-          }))
-          .filter((bar) => bar.time && bar.open > 0);
+        .map((entry) => {
+          const time = toChartTime(entry.date ?? '');
+          return {
+            time: time as any,
+            open: +entry.open,
+            high: +entry.high,
+            low: +entry.low,
+            close: +entry.close,
+          };
+        })
+        .filter((bar) => bar.time && bar.open > 0 && bar.high > 0 && bar.low > 0 && bar.close > 0);
 
       const vols = historical
-          .map((d) => ({
-            time: (d.date ?? '').split('T')[0] as any,
-            value: +d.volume || 0,
-            color: +d.close >= +d.open ? 'rgba(34,197,94,0.35)' : 'rgba(239,68,68,0.35)',
-          }))
-          .filter((volumeBar) => volumeBar.time && volumeBar.value > 0);
+        .map((entry) => {
+          const time = toChartTime(entry.date ?? '');
+          return {
+            time: time as any,
+            value: +entry.volume || 0,
+            color: +entry.close >= +entry.open ? 'rgba(34,197,94,0.35)' : 'rgba(239,68,68,0.35)',
+          };
+        })
+        .filter((volumeBar) => volumeBar.time && volumeBar.value > 0);
+
+      const closes = bars.map((bar) => bar.close);
+      const sma20 = calculateSma(closes, 20)
+        .map((value, index) => (value === null ? null : { time: bars[index].time, value }))
+        .filter((value): value is { time: any; value: number } => Boolean(value));
+      const sma50 = calculateSma(closes, 50)
+        .map((value, index) => (value === null ? null : { time: bars[index].time, value }))
+        .filter((value): value is { time: any; value: number } => Boolean(value));
+      const ema21 = calculateEma(closes, 21)
+        .map((value, index) => (value === null ? null : { time: bars[index].time, value }))
+        .filter((value): value is { time: any; value: number } => Boolean(value));
 
       if (bars.length) {
         candleRef.current.setData(bars);
+        sma20Ref.current?.setData(sma20);
+        sma50Ref.current?.setData(sma50);
+        ema21Ref.current?.setData(ema21);
         chartRef.current?.timeScale().fitContent();
       }
       if (volRef.current && vols.length) volRef.current.setData(vols);
@@ -83,7 +141,7 @@ function ChartModalInner() {
     if (!activeSymbol || !containerRef.current) return;
     let chart: any;
 
-    import('lightweight-charts').then(({ createChart, ColorType, CrosshairMode, CandlestickSeries, HistogramSeries }) => {
+    import('lightweight-charts').then(({ createChart, ColorType, CrosshairMode, CandlestickSeries, HistogramSeries, LineSeries }) => {
       if (!containerRef.current) return;
       containerRef.current.innerHTML = '';
 
@@ -109,11 +167,32 @@ function ChartModalInner() {
         priceFormat: { type: 'volume' },
         priceScaleId: 'vol',
       });
+      const sma20 = chart.addSeries(LineSeries, {
+        color: '#4dc7ff',
+        lineWidth: 2,
+        priceLineVisible: false,
+        lastValueVisible: false,
+      });
+      const sma50 = chart.addSeries(LineSeries, {
+        color: '#ffbf5e',
+        lineWidth: 2,
+        priceLineVisible: false,
+        lastValueVisible: false,
+      });
+      const ema21 = chart.addSeries(LineSeries, {
+        color: '#13e0a1',
+        lineWidth: 2,
+        priceLineVisible: false,
+        lastValueVisible: false,
+      });
       chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
 
       chartRef.current = chart;
       candleRef.current = candle;
       volRef.current = vol;
+      sma20Ref.current = sma20;
+      sma50Ref.current = sma50;
+      ema21Ref.current = ema21;
 
       const ro = new ResizeObserver(() => {
         if (containerRef.current)
@@ -131,6 +210,9 @@ function ChartModalInner() {
       chartRef.current = null;
       candleRef.current = null;
       volRef.current = null;
+      sma20Ref.current = null;
+      sma50Ref.current = null;
+      ema21Ref.current = null;
     };
   }, [activeSymbol]);  // only rebuild chart on symbol change
 
@@ -252,6 +334,7 @@ function ChartModalInner() {
             <span>Prev: <span className="mono" style={{ color: 'var(--text-1)' }}>{formatCurrency(quote.previousClose)}</span></span>
             <span>52W H: <span className="mono" style={{ color: 'var(--green)' }}>{formatCurrency(quote.high52w)}</span></span>
             <span>52W L: <span className="mono" style={{ color: 'var(--red)' }}>{formatCurrency(quote.low52w)}</span></span>
+            <span>SMA20 / SMA50 / EMA21 enabled</span>
           </div>
         )}
       </div>

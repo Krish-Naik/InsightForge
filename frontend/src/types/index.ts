@@ -55,6 +55,33 @@ export interface ScreenerMetric {
   high52:             number;
   low52:              number;
   inNifty50:          boolean;
+  peRatio?:           number | null;
+  forwardPe?:         number | null;
+  priceToBook?:       number | null;
+  dividendYield?:     number | null;
+  beta?:              number | null;
+  revenueGrowth?:     number | null;
+  profitMargins?:     number | null;
+  targetMeanPrice?:   number | null;
+  rsi14?:             number;
+  sma20?:             number;
+  sma50?:             number;
+  volumeRatio?:       number;
+  trend?:             'bullish' | 'bearish' | 'neutral';
+}
+
+export interface SectorOverview {
+  sector:               string;
+  trend:                'bullish' | 'bearish' | 'neutral';
+  averageChangePercent: number;
+  breadth:              number;
+  bullishCount:         number;
+  bearishCount:         number;
+  stockCount:           number;
+  leader:               Quote | null;
+  laggard:              Quote | null;
+  stocks:               Quote[];
+  lastUpdated:          string;
 }
 
 export interface HistoricalBar {

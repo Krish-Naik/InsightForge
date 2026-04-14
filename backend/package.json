@@ -17,6 +17,7 @@
     "express": "^4.21.0",
     "express-rate-limit": "^7.4.1",
     "express-validator": "^7.2.0",
+    "fast-xml-parser": "^5.5.12",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.8.0",

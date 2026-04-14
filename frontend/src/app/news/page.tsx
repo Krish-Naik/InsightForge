@@ -1,169 +1,252 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
-import { Newspaper, Rss, Clock, ExternalLink, RefreshCw, BarChart2, Briefcase, Zap, AlertCircle, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  ArrowUpRight,
+  BookText,
+  Newspaper,
+  RefreshCw,
+  Rss,
+  Sparkles,
+  TrendingDown,
+  TrendingUp,
+} from 'lucide-react';
 import { TVWidget } from '@/components/charts/TVWidget';
 import { SymbolLink } from '@/components/ui/SymbolLink';
+import { EmptyPanel, MetricTile, PageHeader, SectionCard, TrendBadge } from '@/components/ui/page-kit';
 import { marketAPI, type NewsItem } from '@/lib/api';
 import { formatTimeAgo } from '@/lib/format';
-import { runtimeConfig } from '@/lib/runtime';
 
-const CATEGORIES = ['All', 'Markets', 'Economy', 'Corporate', 'Global'];
-
-const DEMO_NEWS: NewsItem[] = [
-  { id: '1', title: 'Market hits new all-time high amid strong corporate earnings', summary: 'Nifty and Sensex surged to record highs on the back of strong Q3 results from IT and banking sectors.', source: 'Reuters', url: '#', time: new Date().toISOString(), sentiment: 'bullish', category: 'Markets', relatedStocks: ['RELIANCE', 'HDFCBANK'] },
-  { id: '2', title: 'RBI keeps interest rates unchanged at 6.5%', summary: 'The central bank maintained the status quo on policy rates, citing sticky core inflation while retaining an accommodative stance.', source: 'Bloomberg', url: '#', time: new Date(Date.now() - 3600000).toISOString(), sentiment: 'neutral', category: 'Economy', relatedStocks: ['SBIN', 'ICICIBANK'] },
-  { id: '3', title: 'Auto sales see single-digit growth in recent quarter', summary: 'Major automakers reported tepid volume growth due to supply chain issues and high vehicle costs.', source: 'Economic Times', url: '#', time: new Date(Date.now() - 7200000).toISOString(), sentiment: 'bearish', category: 'Corporate', relatedStocks: ['TATAMOTORS', 'MARUTI'] },
-];
+const CATEGORY_OPTIONS = ['All', 'Markets', 'Economy', 'Corporate', 'Sector', 'Global', 'Regulation'];
+const SENTIMENT_OPTIONS = [
+  { id: 'all', label: 'All' },
+  { id: 'bullish', label: 'Bullish' },
+  { id: 'bearish', label: 'Bearish' },
+  { id: 'neutral', label: 'Neutral' },
+] as const;
 
 export default function NewsPage() {
   const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [category, setCategory] = useState('All');
   const [error, setError] = useState<string | null>(null);
+  const [category, setCategory] = useState('All');
+  const [sentiment, setSentiment] = useState<(typeof SENTIMENT_OPTIONS)[number]['id']>('all');
 
-  const fetchNews = useCallback(async () => {
-    setLoading(true); setError(null);
+  const loadNews = useCallback(async () => {
+    setLoading(true);
     try {
-      const data = await marketAPI.getNews('all', category === 'All' ? undefined : category.toLowerCase());
-      setNews(data);
-    } catch {
-      setError('Failed to fetch news. The backend might be unreachable.');
-      setNews(runtimeConfig.demoMode ? DEMO_NEWS : []);
+      const stories = await marketAPI.getNews(sentiment, category === 'All' ? undefined : category.toLowerCase(), 30);
+      setNews(stories || []);
+      setError(null);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Failed to load news.');
+      setNews([]);
     } finally {
       setLoading(false);
     }
-  }, [category]);
+  }, [category, sentiment]);
 
   useEffect(() => {
-    fetchNews();
-  }, [fetchNews]);
+    loadNews();
+  }, [loadNews]);
 
-  const getSentimentColor = (sentiment: string) => {
-    switch (sentiment) {
-      case 'bullish': return 'var(--green)';
-      case 'bearish': return 'var(--red)';
-      default: return 'var(--amber)';
-    }
-  };
+  const featured = news[0] || null;
+  const sentimentStats = useMemo(() => ({
+    bullish: news.filter((item) => item.sentiment === 'bullish').length,
+    bearish: news.filter((item) => item.sentiment === 'bearish').length,
+    neutral: news.filter((item) => item.sentiment === 'neutral').length,
+  }), [news]);
 
-  const getSentimentIcon = (sentiment: string) => {
-    switch (sentiment) {
-      case 'bullish': return <TrendingUp style={{ width: 12, height: 12, color: 'var(--green)' }} />;
-      case 'bearish': return <TrendingDown style={{ width: 12, height: 12, color: 'var(--red)' }} />;
-      default: return <Minus style={{ width: 12, height: 12, color: 'var(--amber)' }} />;
+  const symbolsInFocus = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    for (const story of news) {
+      for (const symbol of story.relatedStocks || []) {
+        counts.set(symbol, (counts.get(symbol) || 0) + 1);
+      }
     }
-  };
+
+    return [...counts.entries()]
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, 8);
+  }, [news]);
 
   return (
-    <div className="page" style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, flexShrink: 0 }}>
-        <div>
-          <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-1)', display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-            <Newspaper style={{ width: 18, height: 18, color: 'var(--primary)' }} /> Market News & Analysis
-          </h1>
-          <p style={{ fontSize: 12, color: 'var(--text-2)' }}>Real-time curated news across Indian markets</p>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-           <button onClick={fetchNews} disabled={loading} className="btn btn-ghost" style={{ padding: '5px 8px' }}>
-            <RefreshCw style={{ width: 13, height: 13 }} className={loading ? 'anim-spin' : ''} />
+    <div className="page">
+      <PageHeader
+        kicker="News Desk"
+        title="Curated market intelligence"
+        description="A richer news desk driven by RSS aggregation, article categorization, sentiment tagging, and related-stock extraction. The feed is delayed and cached so news quality improves without creating unstable external call patterns."
+        actions={
+          <button onClick={loadNews} disabled={loading} className="btn btn-ghost">
+            <RefreshCw style={{ width: 14, height: 14 }} className={loading ? 'anim-spin' : ''} />
+            Refresh news
           </button>
-        </div>
+        }
+      />
+
+      {error ? <TrendBadge tone="warning">{error}</TrendBadge> : null}
+
+      <div className="grid-fit-220">
+        <MetricTile label="Stories loaded" value={news.length} tone="primary" icon={Newspaper} subtext="Latest delayed cached feed slice" />
+        <MetricTile label="Bullish stories" value={sentimentStats.bullish} tone="positive" icon={TrendingUp} subtext="Positive market or corporate tone" />
+        <MetricTile label="Bearish stories" value={sentimentStats.bearish} tone="negative" icon={TrendingDown} subtext="Weakness, risk, or regulation pressure" />
+        <MetricTile label="Symbols in focus" value={symbolsInFocus.length} tone="warning" icon={Sparkles} subtext="Tickers repeated across the current feed" />
       </div>
 
-      <div style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0, marginTop: 4 }}>
-        {/* Main News Feed */}
-        <div style={{ flex: 2, display: 'flex', flexDirection: 'column', minWidth: 0, gap: 12 }}>
-          {error && <div className="badge badge-red" style={{ fontSize: 11, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 6 }}><AlertCircle style={{ width: 14, height: 14 }} /> {error}{runtimeConfig.demoMode ? ' — Showing demo data' : ''}</div>}
-          
-          <div className="tab-group" style={{ alignSelf: 'flex-start' }}>
-             {CATEGORIES.map(c => (
-              <button key={c} onClick={() => setCategory(c)} className={`tab ${category === c ? 'tab-active' : ''}`}>{c}</button>
-            ))}
-          </div>
+      <div className="two-column-layout">
+        <div className="stack-16">
+          <SectionCard title="Feed Filters" subtitle="Narrow the market intelligence desk by category or sentiment" icon={Rss}>
+            <div className="stack-16">
+              <div>
+                <div className="stat-label" style={{ marginBottom: 8 }}>Sentiment</div>
+                <div className="tab-group">
+                  {SENTIMENT_OPTIONS.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setSentiment(option.id)}
+                      className={`tab ${sentiment === option.id ? 'tab-active' : ''}`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-          <div className="card scrollbar-thin" style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {loading ? (
-              [...Array(5)].map((_, i) => (
-                <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 8, borderBottom: '1px solid var(--border)', paddingBottom: 16 }}>
-                  <div className="skeleton h-4 rounded w-3/4" />
-                  <div className="skeleton h-3 rounded w-full" />
-                  <div className="skeleton h-3 rounded w-1/2" />
-                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                     <div className="skeleton h-5 rounded w-16" />
-                     <div className="skeleton h-5 rounded w-16" />
-                  </div>
+              <div>
+                <div className="stat-label" style={{ marginBottom: 8 }}>Category</div>
+                <div className="tab-group">
+                  {CATEGORY_OPTIONS.map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() => setCategory(option)}
+                      className={`tab ${category === option ? 'tab-active' : ''}`}
+                    >
+                      {option}
+                    </button>
+                  ))}
                 </div>
-              ))
-            ) : news.length > 0 ? (
-              news.map((item, index) => (
-                <div key={item.id || index} style={{ borderBottom: index < news.length - 1 ? '1px solid var(--border)' : 'none', paddingBottom: index < news.length - 1 ? 16 : 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                     <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-1)', lineHeight: 1.4 }}>
-                        <a href={item.url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: 'inherit' }} className="hover:text-primary transition-colors">
-                            {item.title}
-                        </a>
-                     </h3>
-                     <span className="badge" style={{ backgroundColor: `${getSentimentColor(item.sentiment)}20`, color: getSentimentColor(item.sentiment), border: `1px solid ${getSentimentColor(item.sentiment)}40` }}>
-                        {item.sentiment}
-                     </span>
+              </div>
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Featured Story" subtitle="The most recent story in the current filtered feed" icon={BookText}>
+            {featured ? (
+              <div className="stack-16">
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <TrendBadge tone={featured.sentiment === 'bullish' ? 'positive' : featured.sentiment === 'bearish' ? 'negative' : 'warning'}>
+                      {featured.sentiment}
+                    </TrendBadge>
+                    <TrendBadge tone="primary">{featured.category}</TrendBadge>
                   </div>
-                  
-                  <p style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                    {item.summary}
-                  </p>
-                  
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
-                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 11, color: 'var(--text-3)' }}>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Briefcase style={{ width: 11, height: 11 }} /> {item.source}</span>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Clock style={{ width: 11, height: 11 }} /> {formatTimeAgo(item.time)}</span>
-                        {item.category && <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--primary)' }}><Zap style={{ width: 11, height: 11 }} /> {item.category}</span>}
-                     </div>
-                     
-                     {item.relatedStocks && item.relatedStocks.length > 0 && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                           {item.relatedStocks.slice(0, 3).map(sym => (
-                             <SymbolLink key={sym} symbol={sym}>
-                                <span className="badge badge-muted hover:bg-surface transition-colors cursor-pointer" style={{ padding: '2px 6px', fontSize: 9 }}>{sym}</span>
-                             </SymbolLink>
-                           ))}
-                           {item.relatedStocks.length > 3 && <span style={{ fontSize: 10, color: 'var(--text-3)' }}>+{item.relatedStocks.length - 3}</span>}
-                        </div>
-                     )}
-                  </div>
+                  <span className="topbar-pill">{featured.source} • {formatTimeAgo(featured.time)}</span>
                 </div>
-              ))
+
+                <div>
+                  <h2 style={{ fontSize: '1.4rem', lineHeight: 1.3 }}>{featured.title}</h2>
+                  <p style={{ marginTop: 12, color: 'var(--text-2)', lineHeight: 1.8 }}>{featured.summary}</p>
+                </div>
+
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {(featured.relatedStocks || []).map((symbol) => (
+                    <SymbolLink key={symbol} symbol={symbol}>
+                      <span className="badge badge-muted">{symbol}</span>
+                    </SymbolLink>
+                  ))}
+                </div>
+
+                <a href={featured.url} target="_blank" rel="noreferrer" className="btn btn-primary" style={{ width: 'fit-content' }}>
+                  Open source article
+                  <ArrowUpRight style={{ width: 14, height: 14 }} />
+                </a>
+              </div>
             ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-3)' }}>
-                    <Rss style={{ width: 48, height: 48, marginBottom: 16, opacity: 0.5 }} />
-                    <p>No news available for this category.</p>
-                </div>
+              <EmptyPanel title="No stories in view" description="Try a different category or sentiment filter to repopulate the desk." icon={Newspaper} />
             )}
-          </div>
+          </SectionCard>
+
+          <SectionCard title="Live Feed" subtitle="Recent headlines with related-stock drill-down" icon={Rss}>
+            {loading ? (
+              <div className="stack-12">
+                {[...Array(6)].map((_, index) => <div key={index} className="skeleton" style={{ height: 64 }} />)}
+              </div>
+            ) : news.length ? (
+              <div className="stack-16">
+                {news.slice(1).map((item) => (
+                  <article key={item.id} className="metric-card" style={{ padding: 16 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <TrendBadge tone={item.sentiment === 'bullish' ? 'positive' : item.sentiment === 'bearish' ? 'negative' : 'warning'}>
+                          {item.sentiment}
+                        </TrendBadge>
+                        <TrendBadge tone="primary">{item.category}</TrendBadge>
+                      </div>
+                      <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{item.source} • {formatTimeAgo(item.time)}</span>
+                    </div>
+
+                    <h3 style={{ marginTop: 12, fontSize: 16, lineHeight: 1.45 }}>{item.title}</h3>
+                    <p style={{ marginTop: 8, color: 'var(--text-2)', lineHeight: 1.75 }}>{item.summary}</p>
+
+                    <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {(item.relatedStocks || []).slice(0, 4).map((symbol) => (
+                          <SymbolLink key={symbol} symbol={symbol}>
+                            <span className="badge badge-muted">{symbol}</span>
+                          </SymbolLink>
+                        ))}
+                      </div>
+                      <a href={item.url} target="_blank" rel="noreferrer" className="btn btn-ghost">
+                        Read source
+                        <ArrowUpRight style={{ width: 13, height: 13 }} />
+                      </a>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <EmptyPanel title="No stories loaded" description="The current filter combination returned no articles." icon={Rss} />
+            )}
+          </SectionCard>
         </div>
 
-        {/* Sidebar / TV Widgets */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 16, minWidth: 320, maxWidth: 400 }}>
-          <div className="card" style={{ flex: 1, minHeight: 400, display: 'flex', flexDirection: 'column' }}>
-            <div className="card-header"><BarChart2 style={{ width: 14, height: 14, color: 'var(--amber)' }} /><h3>Top Stories Timeline</h3></div>
-            <div style={{ flex: 1, padding: 8 }}>
-                <TVWidget 
-                    src="https://s3.tradingview.com/external-embedding/embed-widget-timeline.js"
-                    config={{
-                        feedMode: "market",
-                        market: "stock",
-                        colorTheme: "dark",
-                        isTransparent: true,
-                        displayMode: 'regular',
-                        width: "100%",
-                        height: "100%",
-                        locale: "en",
-                        largeChartUrl: ""
-                    }}
-                    className="h-full"
-                />
+        <div className="stack-16">
+          <SectionCard title="Symbols In Focus" subtitle="Tickers most frequently referenced across the current feed" icon={Sparkles}>
+            {symbolsInFocus.length ? (
+              <div className="stack-12">
+                {symbolsInFocus.map(([symbol, count]) => (
+                  <div key={symbol} className="metric-card" style={{ padding: 14 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                      <SymbolLink symbol={symbol} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}>
+                        <div className="mono" style={{ fontSize: 12, fontWeight: 700 }}>{symbol}</div>
+                      </SymbolLink>
+                      <TrendBadge tone="primary">{count} mentions</TrendBadge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="metric-footnote">Related stocks appear here once articles start referencing listed symbols.</div>
+            )}
+          </SectionCard>
+
+          <SectionCard title="Timeline" subtitle="TradingView timeline for broader market context" icon={Newspaper}>
+            <div style={{ height: 420 }}>
+              <TVWidget
+                src="https://s3.tradingview.com/external-embedding/embed-widget-timeline.js"
+                config={{
+                  feedMode: 'market',
+                  market: 'stock',
+                  colorTheme: 'dark',
+                  isTransparent: true,
+                  displayMode: 'adaptive',
+                  locale: 'en',
+                }}
+              />
             </div>
-          </div>
+          </SectionCard>
         </div>
       </div>
     </div>

@@ -1,6 +1,6 @@
 # StockPulse — Indian Market Terminal
 
-Real-time NSE/BSE stock market terminal built with **Next.js 15**, **Express**, **TypeScript**, and **TradingView Widgets**.
+Delayed and cached NSE/BSE stock market terminal built with **Next.js 15**, **Express**, **TypeScript**, and **TradingView Widgets**.
 
 ---
 
@@ -32,7 +32,7 @@ StockPulse/
 │   │   ├── middleware/
 │   │   ├── models/
 │   │   ├── routes/
-│   │   ├── services/       # yahooFinance, upstoxService, news
+│   │   ├── services/       # yahooFinance, marketUniverse, news
 │   │   └── utils/
 │   ├── .env.example
 │   └── package.json
@@ -56,7 +56,7 @@ npm run install:all
 cp backend/.env.example backend/.env
 # Optional: create a frontend env file when the backend is not on localhost
 cp frontend/.env.example frontend/.env.local
-# Edit backend/.env with your credentials
+# Edit backend/.env with your database and auth settings
 ```
 
 **Backend env vars:**
@@ -64,21 +64,19 @@ cp frontend/.env.example frontend/.env.local
 |----------|-------------|
 | `MONGODB_URI` | MongoDB connection string |
 | `JWT_SECRET` | Any long random string |
-| `UPSTOX_ACCESS_TOKEN` | Preferred for local/dev. Paste the access token generated in the Upstox portal here |
-| `UPSTOX_API_KEY` | Optional. From [Upstox Developer Portal](https://upstox.com/developer/) |
-| `UPSTOX_API_SECRET` | Optional. From Upstox Developer Portal |
-| `UPSTOX_AUTH_CODE` | Optional. The short single-use callback `code` from the OAuth redirect URL, not the JWT-like access token |
-| `NEWS_API_KEY` | Optional. Enables live market headlines from News API |
-| `DEMO_MODE` | Optional. When `true`, demo news/sample data fallbacks are enabled |
+| `PORT` | Backend port. Defaults to `5001` |
+| `NODE_ENV` | Runtime environment, usually `development` or `production` |
+| `JWT_EXPIRE` | JWT lifetime for auth/session tokens |
+| `RATE_LIMIT_WINDOW_MS` | Request throttling window in milliseconds |
+| `RATE_LIMIT_MAX_REQUESTS` | Maximum requests allowed per rate-limit window |
 
-> **Note:** The market-data pipeline is Upstox-based. For a stable local setup, prefer `UPSTOX_ACCESS_TOKEN`. `UPSTOX_AUTH_CODE` is single-use and only meant for the OAuth exchange step.
+> **Note:** The market-data pipeline uses delayed cached Yahoo Finance data for quotes, histories, movers, and sector snapshots. News aggregation is RSS-based.
 
 **Frontend env vars:**
 | Variable | Description |
 |----------|-------------|
 | `NEXT_PUBLIC_API_BASE_URL` | Backend base URL for the Next.js rewrite proxy |
-| `NEXT_PUBLIC_DEMO_MODE` | Mirrors demo mode in the UI. Keeps demo-only fallbacks explicit |
-| `NEXT_PUBLIC_PERSISTENCE_MODE` | Defaults to `local` and labels watchlist/portfolio storage mode in the UI |
+| `NEXT_PUBLIC_PERSISTENCE_MODE` | Defaults to `cloud`. Set to `local` to keep watchlist and portfolio storage in the browser only |
 
 ### 3. Run in development
 
@@ -99,9 +97,9 @@ The health payload now reports:
 
 - MongoDB connectivity
 - Yahoo Finance provider status
-- Upstox provider status/configuration
+- Market-universe service status
 - News provider configuration
-- Demo mode state
+- Persistence/runtime environment
 
 ---
 
@@ -115,7 +113,7 @@ The health payload now reports:
 
 ### 🟡 52-Week High/Low Wrong Values (FIXED)
 
-Upstox `mapQuote` was mapping circuit limits to 52-week fields. Now uses correct `52_week_high` / `52_week_low` fields.
+The legacy quote mapper was mapping circuit limits to 52-week fields. It now uses the correct `52_week_high` / `52_week_low` fields.
 
 ### 🟡 Missing `stock-nse-india` Dependency (FIXED)
 

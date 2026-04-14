@@ -1,6 +1,5 @@
 export const runtimeConfig = {
-  demoMode: process.env.NEXT_PUBLIC_DEMO_MODE === 'true',
-  persistenceMode: process.env.NEXT_PUBLIC_PERSISTENCE_MODE || 'local',
+  persistenceMode: process.env.NEXT_PUBLIC_PERSISTENCE_MODE || 'cloud',
 };
 
 export function isLocalPersistenceMode(): boolean {

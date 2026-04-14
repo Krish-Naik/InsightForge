@@ -13,7 +13,47 @@ const signToken = (id: string) => jwt.sign({ id }, config.jwt.secret, {
   expiresIn: config.jwt.expire as any,
 });
 
+function normalizeWorkspaceId(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 48);
+}
+
 export const authController = {
+  bootstrapWorkspace: asyncHandler(async (req: Request, res: Response) => {
+    requireDb();
+
+    const workspaceId = normalizeWorkspaceId(`${req.body.workspaceId || ''}`);
+    const name = `${req.body.name || 'Workspace User'}`.trim().slice(0, 60) || 'Workspace User';
+
+    if (workspaceId.length < 8) {
+      throw new AppError('A valid workspace id is required', 400);
+    }
+
+    const email = `workspace+${workspaceId}@stockpulse.local`;
+    let user = await User.findOne({ email });
+
+    if (!user) {
+      user = await User.create({
+        name,
+        email,
+        password: `workspace-${workspaceId}-${config.jwt.secret}`,
+      });
+    } else if (user.name !== name) {
+      user.name = name;
+      await user.save();
+    }
+
+    const token = signToken(user._id.toString());
+
+    res.json({
+      success: true,
+      data: {
+        user: { id: user._id, name: user.name, email: user.email },
+        token,
+        workspace: true,
+      },
+    });
+  }),
+
   register: asyncHandler(async (req: Request, res: Response) => {
     requireDb();
     const { name, email, password } = req.body;

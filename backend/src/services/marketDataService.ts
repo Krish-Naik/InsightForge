@@ -4,10 +4,10 @@ import {
   getSearchCatalogResults,
 } from '../data/marketCatalog.js';
 import { MarketUniverseService } from './marketUniverseService.js';
-import { UpstoxService } from './upstoxService.js';
-import type { Index, Quote, ScreenerMetric } from './marketTypes.js';
+import { YahooFinanceService } from './yahooFinanceService.js';
+import type { Index, Quote, ScreenerMetric, StockResearch } from './marketTypes.js';
 
-type ProviderName = 'upstox';
+type ProviderName = 'yahoo';
 
 interface ProviderHealthState {
   ok: boolean;
@@ -17,7 +17,7 @@ interface ProviderHealthState {
 }
 
 const providerHealth: Record<ProviderName, ProviderHealthState> = {
-  upstox: {
+  yahoo: {
     ok: true,
     lastAttemptAt: null,
     lastSuccessAt: null,
@@ -89,7 +89,7 @@ function emptyIndex(def: typeof MARKET_INDICES[number]): Index {
   return {
     symbol: def.name,
     shortName: def.shortName,
-    rawSymbol: def.upstoxSymbol,
+    rawSymbol: def.yahooSymbol,
     exchange: 'NSE',
     price: 0,
     change: 0,
@@ -123,7 +123,7 @@ export class MarketDataService {
 
   static async getIndices(): Promise<Index[]> {
     try {
-      const indices = await runProvider('upstox', () => UpstoxService.getIndices());
+      const indices = await runProvider('yahoo', () => YahooFinanceService.getIndices());
       if (hasUsableQuotes(indices)) return indices;
     } catch {
       // Fallback handled below.
@@ -136,8 +136,8 @@ export class MarketDataService {
     const normalizedSymbol = symbol.trim().toUpperCase();
 
     try {
-      const upstoxQuote = await runProvider('upstox', () => UpstoxService.getQuote(normalizedSymbol));
-      if (isUsableQuote(upstoxQuote)) return upstoxQuote;
+      const yahooQuote = await runProvider('yahoo', () => YahooFinanceService.getQuote(normalizedSymbol));
+      if (isUsableQuote(yahooQuote)) return yahooQuote;
     } catch {
       // Null handled below.
     }
@@ -149,9 +149,9 @@ export class MarketDataService {
     const normalizedSymbols = symbols.map((symbol) => symbol.trim().toUpperCase());
 
     try {
-      const upstoxQuotes = await runProvider('upstox', () => UpstoxService.getQuotes(normalizedSymbols));
-      if (Array.isArray(upstoxQuotes) && upstoxQuotes.length) {
-        return normalizedSymbols.map((symbol) => upstoxQuotes.find((quote) => quote.symbol.toUpperCase() === symbol) || emptyQuote(symbol));
+      const yahooQuotes = await runProvider('yahoo', () => YahooFinanceService.getQuotes(normalizedSymbols));
+      if (Array.isArray(yahooQuotes) && yahooQuotes.length) {
+        return normalizedSymbols.map((symbol) => yahooQuotes.find((quote) => quote.symbol.toUpperCase() === symbol) || emptyQuote(symbol));
       }
     } catch {
       // Fallback handled below.
@@ -162,8 +162,8 @@ export class MarketDataService {
 
   static async getMarketMovers(type = 'gainers', count = 10): Promise<Quote[]> {
     try {
-      const upstoxMovers = await runProvider('upstox', () => UpstoxService.getMarketMovers(type, count));
-      if (hasUsableQuotes(upstoxMovers)) return upstoxMovers;
+      const yahooMovers = await runProvider('yahoo', () => YahooFinanceService.getMarketMovers(type, count));
+      if (hasUsableQuotes(yahooMovers)) return yahooMovers;
     } catch {
       // Default below.
     }
@@ -175,10 +175,10 @@ export class MarketDataService {
     const normalizedSymbol = symbol.trim().toUpperCase();
 
     try {
-      const upstoxBars = await runProvider('upstox', () =>
-        UpstoxService.getHistoricalData(normalizedSymbol, period),
+      const yahooBars = await runProvider('yahoo', () =>
+        YahooFinanceService.getHistoricalData(normalizedSymbol, period),
       );
-      if (hasUsableHistoricalData(upstoxBars as Array<{ close: number }>)) return upstoxBars;
+      if (hasUsableHistoricalData(yahooBars as Array<{ close: number }>)) return yahooBars;
     } catch {
       // Empty array below.
     }
@@ -209,7 +209,7 @@ export class MarketDataService {
 
   static async getAnalytics(symbols: string[]): Promise<ScreenerMetric[]> {
     try {
-      return await runProvider('upstox', () => UpstoxService.getScreenerMetrics(symbols));
+      return await runProvider('yahoo', () => YahooFinanceService.getScreenerMetrics(symbols));
     } catch (error) {
       logger.warn(`MarketDataService getAnalytics error: ${(error as Error).message}`);
       return [];
@@ -222,7 +222,7 @@ export class MarketDataService {
 
   static async getStocksBySector(sector: string): Promise<Quote[]> {
     try {
-      const sectorStocks = await runProvider('upstox', () => UpstoxService.getStocksBySector(sector));
+      const sectorStocks = await runProvider('yahoo', () => YahooFinanceService.getStocksBySector(sector));
       if (Array.isArray(sectorStocks)) return sectorStocks;
     } catch {
       // Empty fallback below.
@@ -231,10 +231,21 @@ export class MarketDataService {
     return [];
   }
 
+  static async getSectorAnalytics(sector: string, limit = 40): Promise<ScreenerMetric[]> {
+    try {
+      const stocks = await MarketUniverseService.getStocksBySector(sector, limit);
+      if (!stocks.length) return [];
+      return await runProvider('yahoo', () => YahooFinanceService.getScreenerMetrics(stocks.map((stock) => stock.symbol)));
+    } catch (error) {
+      logger.warn(`MarketDataService getSectorAnalytics error: ${(error as Error).message}`);
+      return [];
+    }
+  }
+
   static async getAllSectorsData() {
     try {
-      const upstoxData = await runProvider('upstox', () => UpstoxService.getAllSectorsData());
-      if (Array.isArray(upstoxData)) return upstoxData;
+      const yahooData = await runProvider('yahoo', () => YahooFinanceService.getAllSectorsData());
+      if (Array.isArray(yahooData)) return yahooData;
     } catch {
       // Empty fallback below.
     }
@@ -242,17 +253,26 @@ export class MarketDataService {
     return [];
   }
 
+  static async getStockResearch(symbol: string): Promise<StockResearch | null> {
+    try {
+      return await runProvider('yahoo', () => YahooFinanceService.getStockResearch(symbol));
+    } catch (error) {
+      logger.warn(`MarketDataService getStockResearch error: ${(error as Error).message}`);
+      return null;
+    }
+  }
+
   static async getMarketSummary() {
     try {
-      const upstoxSummary = await runProvider('upstox', () => UpstoxService.getMarketSummary());
-      if (hasUsableQuotes(upstoxSummary.indices) || hasUsableQuotes(upstoxSummary.gainers)) {
+      const yahooSummary = await runProvider('yahoo', () => YahooFinanceService.getMarketSummary());
+      if (hasUsableQuotes(yahooSummary.indices) || hasUsableQuotes(yahooSummary.gainers)) {
         return {
-          indices: upstoxSummary.indices,
-          gainers: upstoxSummary.gainers,
-          losers: upstoxSummary.losers,
-          mostActive: upstoxSummary.mostActive,
-          lastUpdated: upstoxSummary.lastUpdated || isoNow(),
-          marketStatus: upstoxSummary.indices.find((index) => isUsableQuote(index))?.marketState || 'CLOSED',
+          indices: yahooSummary.indices,
+          gainers: yahooSummary.gainers,
+          losers: yahooSummary.losers,
+          mostActive: yahooSummary.mostActive,
+          lastUpdated: yahooSummary.lastUpdated || isoNow(),
+          marketStatus: yahooSummary.indices.find((index) => isUsableQuote(index))?.marketState || 'CLOSED',
         };
       }
     } catch {
@@ -272,7 +292,7 @@ export class MarketDataService {
   static async primeHotPathCache(): Promise<void> {
     await Promise.allSettled([
       MarketUniverseService.getUniverse(),
-      UpstoxService.primeHotPathCache(),
+      YahooFinanceService.primeHotPathCache(),
     ]);
   }
 }
