@@ -17,6 +17,7 @@ router.get('/sectors/:sector/analytics', marketController.getSectorAnalytics);
 router.get('/movers', marketController.getMarketMovers);
 router.get('/radar', marketController.getOpportunityRadar);
 router.get('/screener', marketController.getGuidedScreener);
+router.post('/screener/run', marketController.runScreenerFilters);
 router.get('/quotes', marketController.getQuotes);
 router.get('/quote/:symbol', marketController.getQuote);
 router.get('/research/:symbol', marketController.getStockResearch);

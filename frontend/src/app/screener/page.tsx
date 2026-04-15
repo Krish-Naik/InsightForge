@@ -1,313 +1,477 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Compass, Filter, RefreshCw, ShieldCheck, Sparkles, Target } from 'lucide-react';
-import { OpportunityInsightCard } from '@/components/ui/insight-kit';
-import { EmptyPanel, MetricTile, PageHeader, SectionCard, TrendBadge } from '@/components/ui/page-kit';
-import { marketAPI, type GuidedScreenerResponse, type ScreenerFilters, type ScreenerPlaybook, type ScreenerSort, type SectorOverview, type Selectivity, type TradingHorizon } from '@/lib/api';
-import { formatIST, formatTimeAgo } from '@/lib/format';
+import { 
+  ArrowDown, ArrowUp, Compass, Filter, RefreshCw, Save, Search, 
+  TrendingDown, TrendingUp, Zap, X, ChevronDown, Check, AlertTriangle
+} from 'lucide-react';
+import { marketAPI, type SearchResult } from '@/lib/api';
+import { formatCurrency, formatLargeNumber, formatPercent } from '@/lib/format';
 
-const PLAYBOOKS: Array<{ id: ScreenerPlaybook; label: string; description: string }> = [
-  { id: 'leadership', label: 'Strong stocks in strong sectors', description: 'Find confirmed leaders after a broad market sweep.' },
-  { id: 'quality', label: 'Quality names with improving trend', description: 'Blend durable trend quality with fundamentals when the provider supplies them.' },
-  { id: 'pullback', label: 'Pullbacks in leadership', description: 'Look for second-chance entries rather than late chases.' },
-  { id: 'sympathy', label: 'Secondary names in hot sectors', description: 'Spot lagging names in sectors where participation is broadening.' },
-  { id: 'avoid', label: 'What to leave alone', description: 'Use the screener defensively when market quality is fading.' },
-];
-
-const SORTS: Array<{ id: ScreenerSort; label: string }> = [
-  { id: 'score', label: 'Best fit' },
-  { id: 'momentum', label: 'Momentum' },
-  { id: 'volume', label: 'Volume' },
-  { id: 'breakout', label: 'Breakout' },
-  { id: 'sector', label: 'Sector strength' },
-  { id: 'value', label: 'Quality / value' },
-];
-
-const EMPTY_FILTERS: ScreenerFilters = {};
-
-function parseFilterValue(value: string): number | null {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : null;
+interface FilterCondition {
+  id: string;
+  metric: string;
+  operator: string;
+  value: string;
+  enabled: boolean;
 }
 
-function FilterInput({
-  label,
-  value,
-  placeholder,
-  onChange,
-}: {
-  label: string;
-  value: number | null | undefined;
-  placeholder: string;
-  onChange: (nextValue: string) => void;
-}) {
+interface SavedScreener {
+  id: string;
+  name: string;
+  filters: FilterCondition[];
+  createdAt: string;
+}
+
+const METRICS = [
+  { value: 'price', label: 'Price', type: 'number' },
+  { value: 'changePercent', label: '% Change', type: 'number' },
+  { value: 'volume', label: 'Volume', type: 'number' },
+  { value: 'marketCap', label: 'Market Cap', type: 'number' },
+  { value: 'rsi14', label: 'RSI (14)', type: 'number' },
+  { value: 'sma20', label: 'SMA 20', type: 'number' },
+  { value: 'sma50', label: 'SMA 50', type: 'number' },
+  { value: 'sector', label: 'Sector', type: 'text' },
+  { value: 'momentumScore', label: 'Momentum Score', type: 'number' },
+  { value: 'volumeRatio', label: 'Volume Ratio', type: 'number' },
+];
+
+const OPERATORS = [
+  { value: '>', label: 'Greater than' },
+  { value: '<', label: 'Less than' },
+  { value: '=', label: 'Equals' },
+  { value: '>=', label: 'Greater or equal' },
+  { value: '<=', label: 'Less or equal' },
+];
+
+function MetricIcon({ metric }: { metric: string }) {
+  if (metric.includes('change') || metric === 'momentumScore') return <TrendingUp style={{ width: 14, height: 14 }} />;
+  if (metric === 'volume' || metric === 'volumeRatio') return <Zap style={{ width: 14, height: 14 }} />;
+  if (metric.includes('RSI')) return <AlertTriangle style={{ width: 14, height: 14 }} />;
+  return <Filter style={{ width: 14, height: 14 }} />;
+}
+
+function StockSearchBar({ onSelect }: { onSelect: (symbol: string) => void }) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showResults, setShowResults] = useState(false);
+
+  useEffect(() => {
+    if (query.length < 2) {
+      setResults([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const data = await marketAPI.searchStocks(query);
+        setResults(data.slice(0, 8));
+        setShowResults(true);
+      } catch {
+        setResults([]);
+      } finally {
+        setLoading(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [query]);
+
   return (
-    <div>
-      <div className="stat-label" style={{ marginBottom: 8 }}>{label}</div>
-      <input
-        className="input"
-        inputMode="decimal"
-        value={value ?? ''}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-      />
+    <div style={{ position: 'relative' }}>
+      <div style={{ position: 'relative' }}>
+        <Search style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', width: 16, height: 16, color: 'var(--text-3)' }} />
+        <input
+          type="text"
+          className="input"
+          placeholder="Search any stock (e.g., RELIANCE, TCS, Bank...)"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onFocus={() => setShowResults(true)}
+          onBlur={() => setTimeout(() => setShowResults(false), 200)}
+          style={{ paddingLeft: 40 }}
+        />
+      </div>
+      
+      {showResults && (results.length > 0 || loading) && (
+        <div className="panel" style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100,
+          marginTop: 4, maxHeight: 300, overflow: 'auto'
+        }}>
+          {loading ? (
+            <div style={{ padding: 12, textAlign: 'center', color: 'var(--text-3)' }}>Searching...</div>
+          ) : (
+            results.map((stock) => (
+              <button
+                key={stock.symbol}
+                onClick={() => {
+                  onSelect(stock.symbol);
+                  setQuery('');
+                  setShowResults(false);
+                }}
+                className="list-card"
+                style={{ display: 'flex', justifyContent: 'space-between', width: '100%', textAlign: 'left', border: 'none', borderBottom: '1px solid var(--border-light)' }}
+              >
+                <div>
+                  <span className="mono" style={{ fontWeight: 700 }}>{stock.symbol}</span>
+                  <span style={{ marginLeft: 8, color: 'var(--text-2)', fontSize: 12 }}>{stock.name}</span>
+                </div>
+                <span className="badge badge-muted">{stock.exchange}</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-export default function ScreenerPage() {
-  const [playbook, setPlaybook] = useState<ScreenerPlaybook>('leadership');
-  const [horizon, setHorizon] = useState<TradingHorizon>('swing');
-  const [selectivity, setSelectivity] = useState<Selectivity>('balanced');
-  const [sortBy, setSortBy] = useState<ScreenerSort>('score');
-  const [sector, setSector] = useState<string | 'all'>('all');
-  const [draftFilters, setDraftFilters] = useState<ScreenerFilters>(EMPTY_FILTERS);
-  const [appliedFilters, setAppliedFilters] = useState<ScreenerFilters>(EMPTY_FILTERS);
-  const [screen, setScreen] = useState<GuidedScreenerResponse | null>(null);
-  const [sectors, setSectors] = useState<SectorOverview[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+function FilterRow({ 
+  filter, onChange, onRemove 
+}: { 
+  filter: FilterCondition; 
+  onChange: (id: string, updates: Partial<FilterCondition>) => void;
+  onRemove: (id: string) => void;
+}) {
+  return (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+      <select
+        value={filter.metric}
+        onChange={(e) => onChange(filter.id, { metric: e.target.value })}
+        className="input"
+        style={{ width: 140, padding: '8px 10px' }}
+      >
+        {METRICS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+      </select>
 
-  const loadResults = useCallback(async () => {
-    setRefreshing(true);
+      <select
+        value={filter.operator}
+        onChange={(e) => onChange(filter.id, { operator: e.target.value })}
+        className="input"
+        style={{ width: 140, padding: '8px 10px' }}
+      >
+        {OPERATORS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+
+      <input
+        type={METRICS.find(m => m.value === filter.metric)?.type === 'number' ? 'number' : 'text'}
+        value={filter.value}
+        onChange={(e) => onChange(filter.id, { value: e.target.value })}
+        placeholder="Value"
+        className="input"
+        style={{ width: 100, padding: '8px 10px' }}
+      />
+
+      <button onClick={() => onRemove(filter.id)} className="btn btn-ghost" style={{ padding: 6 }}>
+        <X style={{ width: 14, height: 14 }} />
+      </button>
+    </div>
+  );
+}
+
+function QueryParser({ query, onChange }: { query: string; onChange: (q: string) => void }) {
+  const [showHelp, setShowHelp] = useState(false);
+
+  return (
+    <div className="surface-inset">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <div className="stat-label">Query Expression (optional)</div>
+        <button onClick={() => setShowHelp(!showHelp)} className="btn btn-ghost" style={{ padding: '4px 8px', fontSize: 11 }}>
+          {showHelp ? 'Hide' : 'Show'} syntax
+        </button>
+      </div>
+      
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder='e.g., RSI < 30 AND price > 100'
+        className="input"
+      />
+
+      {showHelp && (
+        <div className="metric-footnote" style={{ marginTop: 8 }}>
+          <div>Supported: AND, OR, parentheses</div>
+          <div>Examples:</div>
+          <div style={{ marginLeft: 12, fontFamily: 'var(--font-mono)' }}>
+            RSI &lt; 30 AND price &gt; 100<br/>
+            volume &gt; 1000000 OR marketCap &gt; 10000<br/>
+            (sector = 'Technology' OR sector = 'Finance') AND changePercent &gt; 2
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+type SortField = 'symbol' | 'price' | 'changePercent' | 'volume' | 'marketCap' | 'rsi14';
+type SortDirection = 'asc' | 'desc';
+
+export default function ScreenerPage() {
+  const [filters, setFilters] = useState<FilterCondition[]>([]);
+  const [query, setQuery] = useState('');
+  const [selectedStocks, setSelectedStocks] = useState<string[]>([]);
+  const [results, setResults] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [savedScreeners, setSavedScreeners] = useState<SavedScreener[]>([]);
+  const [screenerName, setScreenerName] = useState('');
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  
+  const [sortField, setSortField] = useState<SortField>('changePercent');
+  const [sortDir, setSortDir] = useState<SortDirection>('desc');
+
+  const addFilter = useCallback(() => {
+    setFilters(prev => [...prev, {
+      id: crypto.randomUUID(),
+      metric: 'price',
+      operator: '>',
+      value: '',
+      enabled: true
+    }]);
+  }, []);
+
+  const updateFilter = useCallback((id: string, updates: Partial<FilterCondition>) => {
+    setFilters(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
+  }, []);
+
+  const removeFilter = useCallback((id: string) => {
+    setFilters(prev => prev.filter(f => f.id !== id));
+  }, []);
+
+  const runScreener = useCallback(async () => {
+    setLoading(true);
     try {
-      const [nextScreen, nextSectors] = await Promise.all([
-        marketAPI.getGuidedScreener(playbook, horizon, selectivity, sortBy, sector, appliedFilters),
-        marketAPI.getAllSectorsData(),
-      ]);
-      setScreen(nextScreen);
-      setSectors(nextSectors);
-      setError(null);
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Failed to load guided screener ideas.');
+      const activeFilters = filters.filter(f => f.enabled && f.metric && f.operator && f.value);
+      
+      const mockResults = await marketAPI.runScreenerFilters({
+        filters: activeFilters,
+        query: query || undefined,
+        symbols: selectedStocks.length > 0 ? selectedStocks : undefined,
+      });
+      
+      setResults(mockResults);
+    } catch (error) {
+      console.error('Screener error:', error);
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
-  }, [appliedFilters, horizon, playbook, sector, selectivity, sortBy]);
+  }, [filters, query, selectedStocks]);
 
-  useEffect(() => {
-    void loadResults();
-  }, [loadResults]);
+  const sortedResults = useMemo(() => {
+    return [...results].sort((a, b) => {
+      const aVal = a[sortField];
+      const bVal = b[sortField];
+      const modifier = sortDir === 'asc' ? 1 : -1;
+      
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        return (aVal - bVal) * modifier;
+      }
+      return String(aVal).localeCompare(String(bVal)) * modifier;
+    });
+  }, [results, sortField, sortDir]);
 
-  const activePlaybook = useMemo(() => PLAYBOOKS.find((entry) => entry.id === playbook) || PLAYBOOKS[0], [playbook]);
-  const sectorOptions = useMemo(() => ['all', ...sectors.map((entry) => entry.sector)], [sectors]);
+  const saveScreener = useCallback(() => {
+    if (!screenerName.trim()) return;
+    
+    const newScreener: SavedScreener = {
+      id: crypto.randomUUID(),
+      name: screenerName,
+      filters: filters.filter(f => f.enabled),
+      createdAt: new Date().toISOString(),
+    };
+    
+    setSavedScreeners(prev => [...prev, newScreener]);
+    setScreenerName('');
+    setShowSaveModal(false);
+  }, [screenerName, filters]);
 
-  const updateFilter = useCallback((key: keyof ScreenerFilters, rawValue: string) => {
-    setDraftFilters((current) => ({
-      ...current,
-      [key]: parseFilterValue(rawValue),
-    }));
+  const loadScreener = useCallback((screener: SavedScreener) => {
+    setFilters(screener.filters.map(f => ({ ...f, id: crypto.randomUUID() })));
   }, []);
 
-  const applyFilters = useCallback(() => {
-    setAppliedFilters({ ...draftFilters });
-  }, [draftFilters]);
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDir('desc');
+    }
+  };
 
-  const clearFilters = useCallback(() => {
-    setDraftFilters(EMPTY_FILTERS);
-    setAppliedFilters(EMPTY_FILTERS);
-  }, []);
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field) return null;
+    return sortDir === 'asc' ? <ArrowUp style={{ width: 12, height: 12 }} /> : <ArrowDown style={{ width: 12, height: 12 }} />;
+  };
 
   return (
     <div className="page">
-      <PageHeader
-        kicker="Guided Screener"
-        title="Market-wide discovery with real screen controls"
-        description="Guided Screener is the deliberate workflow. Start with a playbook, then narrow the market with structured filters and transparent ranking logic."
-        actions={
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {screen?.generatedAt ? <span className="topbar-pill">Updated {formatTimeAgo(screen.generatedAt)} • {formatIST(new Date(screen.generatedAt))}</span> : null}
-            <TrendBadge tone={screen?.sourceMode === 'ai' ? 'primary' : 'warning'}>{screen?.sourceMode === 'ai' ? 'Groq phrasing' : 'Rules-first'}</TrendBadge>
-            <button onClick={() => void loadResults()} disabled={refreshing} className="btn btn-ghost">
-              <RefreshCw style={{ width: 14, height: 14 }} className={refreshing ? 'anim-spin' : ''} />
-              Refresh
+      <div className="page-header">
+        <div>
+          <div className="page-kicker">Guided Screener</div>
+          <h1 className="page-title">Stock Screener</h1>
+          <p className="page-subtitle">
+            Filter and discover stocks based on custom criteria. Search any stock, add filters, or use query expressions.
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => setShowSaveModal(true)} className="btn btn-ghost">
+            <Save style={{ width: 14, height: 14 }} /> Save
+          </button>
+          <button onClick={() => runScreener()} disabled={loading} className="btn btn-primary">
+            <Filter style={{ width: 14, height: 14 }} />
+            {loading ? 'Running...' : 'Run Screener'}
+          </button>
+        </div>
+      </div>
+
+      {/* Search Bar */}
+      <div className="card" style={{ padding: 16 }}>
+        <StockSearchBar onSelect={(symbol) => {
+          setSelectedStocks(prev => prev.includes(symbol) ? prev : [...prev, symbol]);
+        }} />
+        
+        {selectedStocks.length > 0 && (
+          <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {selectedStocks.map(symbol => (
+              <span key={symbol} className="badge badge-muted">
+                {symbol}
+                <button onClick={() => setSelectedStocks(prev => prev.filter(s => s !== symbol))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginLeft: 4 }}>
+                  <X style={{ width: 12, height: 12 }} />
+                </button>
+              </span>
+            ))}
+            <button onClick={() => setSelectedStocks([])} className="btn btn-ghost" style={{ padding: '4px 8px', fontSize: 11 }}>
+              Clear all
             </button>
           </div>
-        }
-      />
-
-      {error ? <TrendBadge tone="warning">{error}</TrendBadge> : null}
-
-      <div className="metric-strip-grid">
-        <MetricTile label="Playbook" value={activePlaybook.label} tone="primary" icon={Compass} subtext={activePlaybook.description} />
-        <MetricTile label="Sector focus" value={screen?.sector === 'all' ? 'All sectors' : screen?.sector || 'All sectors'} tone="positive" icon={Target} subtext={`${screen?.coverage.sectorsScanned || 0} sectors scanned`} />
-        <MetricTile label="Base matches" value={screen?.diagnostics.baseMatches || 0} tone="warning" icon={Sparkles} subtext={`${screen?.coverage.matches || 0} final matches`} />
-        <MetricTile label="Sort" value={SORTS.find((entry) => entry.id === sortBy)?.label || 'Best fit'} tone="negative" icon={Filter} subtext={`${screen?.diagnostics.activeFilters.length || 0} active filters`} />
+        )}
       </div>
 
-      <div className="workbench-grid-three">
-        <SectionCard title="Playbooks" subtitle="Start with the type of opportunity you want to discover" icon={Compass}>
-          <div className="panel-scroll-tight stack-12">
-            {PLAYBOOKS.map((entry) => {
-              const active = entry.id === playbook;
-              return (
-                <button
-                  key={entry.id}
-                  type="button"
-                  className="list-card"
-                  onClick={() => setPlaybook(entry.id)}
-                  style={{
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                    borderColor: active ? 'rgba(217, 154, 79, 0.34)' : undefined,
-                    background: active ? 'linear-gradient(135deg, rgba(217, 154, 79, 0.16), rgba(255,248,236,0.03))' : undefined,
-                  }}
-                >
-                  <div className="stat-label">Playbook</div>
-                  <div style={{ marginTop: 8, fontSize: 15, fontWeight: 700 }}>{entry.label}</div>
-                  <div className="metric-footnote">{entry.description}</div>
-                </button>
-              );
-            })}
-          </div>
-        </SectionCard>
-
-        <SectionCard title="Screen Controls" subtitle="Macro controls that reshape the research universe" icon={Filter}>
-          <div className="stack-12">
-            <div>
-              <div className="stat-label" style={{ marginBottom: 8 }}>Sector focus</div>
-              <select value={sector} onChange={(event) => setSector(event.target.value)} className="input">
-                {sectorOptions.map((entry) => (
-                  <option key={entry} value={entry}>{entry === 'all' ? 'All sectors' : entry}</option>
-                ))}
-              </select>
+      <div className="two-column-layout">
+        {/* Filters Panel */}
+        <div className="stack-16">
+          <div className="card" style={{ padding: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div className="stat-label">Filter Conditions</div>
+              <button onClick={addFilter} className="btn btn-ghost" style={{ padding: '6px 12px' }}>
+                + Add Filter
+              </button>
             </div>
-
-            <div>
-              <div className="stat-label" style={{ marginBottom: 8 }}>Sort results by</div>
-              <div className="tab-group">
-                {SORTS.map((entry) => (
-                  <button key={entry.id} type="button" onClick={() => setSortBy(entry.id)} className={`tab ${sortBy === entry.id ? 'tab-active' : ''}`}>{entry.label}</button>
-                ))}
+            
+            {filters.length === 0 ? (
+              <div className="metric-footnote" style={{ textAlign: 'center', padding: 20 }}>
+                No filters added. Click "Add Filter" or use query expression below.
               </div>
-            </div>
-
-            <div>
-              <div className="stat-label" style={{ marginBottom: 8 }}>Horizon</div>
-              <div className="tab-group">
-                {(['intraday', 'swing'] as TradingHorizon[]).map((entry) => (
-                  <button key={entry} type="button" onClick={() => setHorizon(entry)} className={`tab ${horizon === entry ? 'tab-active' : ''}`}>{entry}</button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <div className="stat-label" style={{ marginBottom: 8 }}>Selectivity</div>
-              <div className="tab-group">
-                {(['conservative', 'balanced', 'aggressive'] as Selectivity[]).map((entry) => (
-                  <button key={entry} type="button" onClick={() => setSelectivity(entry)} className={`tab ${selectivity === entry ? 'tab-active' : ''}`}>{entry}</button>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button type="button" onClick={applyFilters} className="btn btn-primary">Run screen</button>
-              <button type="button" onClick={clearFilters} className="btn btn-ghost">Clear filters</button>
-            </div>
-          </div>
-        </SectionCard>
-
-        <SectionCard title="Numeric Filters" subtitle="Price, momentum, participation, and valuation thresholds" icon={Filter}>
-          <div className="grid-fit-180">
-            <FilterInput label="Min price" value={draftFilters.minPrice} placeholder="e.g. 200" onChange={(value) => updateFilter('minPrice', value)} />
-            <FilterInput label="Max price" value={draftFilters.maxPrice} placeholder="e.g. 2500" onChange={(value) => updateFilter('maxPrice', value)} />
-            <FilterInput label="Min momentum" value={draftFilters.minMomentumScore} placeholder="e.g. 20" onChange={(value) => updateFilter('minMomentumScore', value)} />
-            <FilterInput label="Min volume ratio" value={draftFilters.minVolumeRatio} placeholder="e.g. 1.2" onChange={(value) => updateFilter('minVolumeRatio', value)} />
-            <FilterInput label="Max RSI" value={draftFilters.maxRsi14} placeholder="e.g. 68" onChange={(value) => updateFilter('maxRsi14', value)} />
-            <FilterInput label="Min 52W range" value={draftFilters.minWeek52RangePosition} placeholder="e.g. 55" onChange={(value) => updateFilter('minWeek52RangePosition', value)} />
-            <FilterInput label="Near 52W high" value={draftFilters.maxDistanceFromHigh52} placeholder="within %" onChange={(value) => updateFilter('maxDistanceFromHigh52', value)} />
-            <FilterInput label="Max PE" value={draftFilters.maxPeRatio} placeholder="e.g. 25" onChange={(value) => updateFilter('maxPeRatio', value)} />
-            <FilterInput label="Max P/B" value={draftFilters.maxPriceToBook} placeholder="e.g. 4" onChange={(value) => updateFilter('maxPriceToBook', value)} />
-            <FilterInput label="Min revenue growth" value={draftFilters.minRevenueGrowth} placeholder="e.g. 12" onChange={(value) => updateFilter('minRevenueGrowth', value)} />
-            <FilterInput label="Min profit margin" value={draftFilters.minProfitMargins} placeholder="e.g. 10" onChange={(value) => updateFilter('minProfitMargins', value)} />
-          </div>
-        </SectionCard>
-      </div>
-
-      <div className="workbench-grid">
-        <SectionCard title="Screen Readout" subtitle="Why this screen is returning these names" icon={ShieldCheck} tone="primary">
-          {screen ? (
-            <div className="stack-16">
-              <div className="metric-footnote">{screen.narrative}</div>
-              <div className="grid-fit-180">
-                <MetricTile label="Universe in focus" value={screen.coverage.universeStocks} tone="primary" />
-                <MetricTile label="Sectors scanned" value={screen.coverage.sectorsScanned} tone="positive" />
-                <MetricTile label="Filtered out" value={screen.diagnostics.filteredOut} tone="warning" />
-                <MetricTile label="Matches" value={screen.coverage.matches} tone="negative" />
-              </div>
-
-              {screen.diagnostics.activeFilters.length ? (
-                <div className="opportunity-chip-row">
-                  {screen.diagnostics.activeFilters.map((entry) => (
-                    <span key={`${entry.label}-${entry.value}`} className="badge badge-muted">{entry.label}: {entry.value}</span>
-                  ))}
-                </div>
-              ) : null}
-
-              <div className="grid-fit-180">
-                <MetricTile label="PE coverage" value={`${screen.diagnostics.fieldCoverage.peRatio}%`} tone="primary" />
-                <MetricTile label="P/B coverage" value={`${screen.diagnostics.fieldCoverage.priceToBook}%`} tone="positive" />
-                <MetricTile label="Growth coverage" value={`${screen.diagnostics.fieldCoverage.revenueGrowth}%`} tone="warning" />
-                <MetricTile label="Margin coverage" value={`${screen.diagnostics.fieldCoverage.profitMargins}%`} tone="negative" />
-              </div>
-
+            ) : (
               <div className="stack-8">
-                {screen.diagnostics.notes.map((entry) => (
-                  <div key={entry} className="metric-footnote">{entry}</div>
+                {filters.map(filter => (
+                  <FilterRow key={filter.id} filter={filter} onChange={updateFilter} onRemove={removeFilter} />
+                ))}
+              </div>
+            )}
+          </div>
+
+          <QueryParser query={query} onChange={setQuery} />
+
+          {/* Saved Screeners */}
+          {savedScreeners.length > 0 && (
+            <div className="card" style={{ padding: 16 }}>
+              <div className="stat-label" style={{ marginBottom: 12 }}>Saved Screeners</div>
+              <div className="stack-8">
+                {savedScreeners.map(s => (
+                  <button key={s.id} onClick={() => loadScreener(s)} className="list-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontWeight: 600 }}>{s.name}</span>
+                    <span className="badge badge-muted">{s.filters.length} filters</span>
+                  </button>
                 ))}
               </div>
             </div>
-          ) : (
-            <EmptyPanel title="Screener readout loading" description="The screen explanation will appear once the broader market sweep completes." icon={ShieldCheck} />
           )}
-        </SectionCard>
+        </div>
 
-        <SectionCard title="Sector Match Board" subtitle="Where the current screen is finding qualified names" icon={Target}>
-          {screen?.sectorFocus.length ? (
-            <div className="panel-scroll-tight stack-12">
-              {screen.sectorFocus.map((entry) => (
-                <div key={entry.sector} className="list-card">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                    <div>
-                      <div className="stat-label">Sector</div>
-                      <div style={{ marginTop: 8, fontSize: 15, fontWeight: 700 }}>{entry.sector}</div>
-                    </div>
-                    <TrendBadge tone={entry.trend === 'bullish' ? 'positive' : entry.trend === 'bearish' ? 'negative' : 'warning'}>{entry.matchCount} matches</TrendBadge>
-                  </div>
-                  <div className="metric-footnote">Breadth {entry.breadth.toFixed(0)}% • Avg move {entry.averageChangePercent.toFixed(2)}% • Candidates {entry.candidateCount}</div>
-                </div>
-              ))}
+        {/* Results Table */}
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div className="panel-header">
+            <div className="panel-title">Results ({sortedResults.length})</div>
+          </div>
+          
+          {sortedResults.length === 0 ? (
+            <div className="empty-state">
+              <Search style={{ width: 32, height: 32, color: 'var(--text-3)' }} />
+              <div style={{ fontWeight: 600 }}>No results</div>
+              <div className="metric-footnote">Add filters or search stocks, then click "Run Screener"</div>
             </div>
           ) : (
-            <EmptyPanel title="Sector board unavailable" description="Sector match density will appear here once the screen has enough qualified names." icon={Target} />
+            <div className="panel-scroll" style={{ maxHeight: 'calc(100vh - 400px)' }}>
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th onClick={() => toggleSort('symbol')} style={{ cursor: 'pointer' }}>
+                      Symbol <SortIcon field="symbol" />
+                    </th>
+                    <th onClick={() => toggleSort('price')} style={{ cursor: 'pointer' }}>
+                      Price <SortIcon field="price" />
+                    </th>
+                    <th onClick={() => toggleSort('changePercent')} style={{ cursor: 'pointer' }}>
+                      % Change <SortIcon field="changePercent" />
+                    </th>
+                    <th onClick={() => toggleSort('volume')} style={{ cursor: 'pointer' }}>
+                      Volume <SortIcon field="volume" />
+                    </th>
+                    <th onClick={() => toggleSort('rsi14')} style={{ cursor: 'pointer' }}>
+                      RSI <SortIcon field="rsi14" />
+                    </th>
+                    <th>Sector</th>
+                    <th onClick={() => toggleSort('marketCap')} style={{ cursor: 'pointer' }}>
+                      Mkt Cap <SortIcon field="marketCap" />
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedResults.map((stock) => (
+                    <tr key={stock.symbol}>
+                      <td style={{ fontWeight: 700 }}>{stock.symbol}</td>
+                      <td className="mono">{formatCurrency(stock.price)}</td>
+                      <td className="mono" style={{ color: stock.changePercent >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                        {formatPercent(stock.changePercent)}
+                      </td>
+                      <td className="mono">{formatLargeNumber(stock.volume)}</td>
+                      <td className="mono">{stock.rsi14 || '—'}</td>
+                      <td>{stock.sector || '—'}</td>
+                      <td className="mono">{stock.marketCap ? formatLargeNumber(stock.marketCap) : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
-        </SectionCard>
+        </div>
       </div>
 
-      <div className="workbench-grid">
-        <SectionCard title="Qualified Results" subtitle="Broader discovery results with explicit research controls" icon={Sparkles}>
-          {loading && !screen ? (
-            <div className="compact-card-grid">
-              {[...Array(6)].map((_, index) => <div key={index} className="skeleton" style={{ height: 220 }} />)}
+      {/* Save Modal */}
+      {showSaveModal && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }}>
+          <div className="card" style={{ padding: 24, width: 400 }}>
+            <div className="stat-label" style={{ marginBottom: 12 }}>Save Screener</div>
+            <input
+              type="text"
+              value={screenerName}
+              onChange={(e) => setScreenerName(e.target.value)}
+              placeholder="Screener name"
+              className="input"
+            />
+            <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowSaveModal(false)} className="btn btn-ghost">Cancel</button>
+              <button onClick={saveScreener} className="btn btn-primary">Save</button>
             </div>
-          ) : screen?.opportunities.length ? (
-            <div className="panel-scroll">
-              <div className="compact-card-grid">
-                {screen.opportunities.map((opportunity, index) => (
-                  <OpportunityInsightCard key={`${opportunity.id}-${playbook}-${sortBy}`} opportunity={opportunity} rank={index + 1} compact />
-                ))}
-              </div>
-            </div>
-          ) : (
-            <EmptyPanel title="No ideas matched" description="The playbook and numeric filters are stricter than current market conditions. Loosen one threshold or change the sector focus." icon={Compass} />
-          )}
-        </SectionCard>
-      </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

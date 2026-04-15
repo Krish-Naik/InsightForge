@@ -484,6 +484,13 @@ export const marketAPI = {
 
     return api.get(`/market/screener?${params.toString()}`);
   },
+  runScreenerFilters: async (payload: {
+    filters: Array<{ metric: string; operator: string; value: string; enabled: boolean }>;
+    query?: string;
+    symbols?: string[];
+  }): Promise<any[]> => {
+    return api.post('/market/screener/run', payload);
+  },
   getMarketMovers:  (type = 'gainers', count = 10): Promise<Quote[]> =>
     api.get(`/market/movers?type=${type}&count=${count}`),
   getQuotes:        async (symbols: string[]): Promise<Quote[]>   => {

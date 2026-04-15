@@ -1,315 +1,371 @@
 'use client';
 
+import { useCallback, useEffect, useState } from 'react';
+import { 
+  Activity, AlertTriangle, ArrowRight, BarChart3, BrainCircuit, 
+  Calendar, Clock, Filter, Flame, Focus, Gauge, HelpCircle, 
+  RefreshCw, ShieldAlert, Sparkles, TrendingDown, TrendingUp, 
+  Users, Zap, Target, Signal
+} from 'lucide-react';
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Activity, BrainCircuit, Clock3, RefreshCw, Signal, Sparkles, Target, Zap } from 'lucide-react';
-import { OpportunityInsightCard } from '@/components/ui/insight-kit';
-import { EmptyPanel, MetricTile, PageHeader, SectionCard, TrendBadge } from '@/components/ui/page-kit';
-import { marketAPI, type MarketSummary, type OpportunityMode, type Quote, type RadarResponse, type Selectivity, type TradingHorizon } from '@/lib/api';
-import { formatCurrency, formatIST, formatLargeNumber, formatPercent, formatTimeAgo } from '@/lib/format';
+import { marketAPI, type OpportunityCard, type RadarResponse } from '@/lib/api';
+import { formatCurrency, formatLargeNumber, formatPercent, formatTimeAgo } from '@/lib/format';
 
-const MODES: Array<{ id: OpportunityMode; label: string; description: string }> = [
-  { id: 'momentum', label: 'Intraday Momentum', description: 'Fast participation, clean follow-through, and immediate sponsorship.' },
-  { id: 'breakout', label: 'Early Breakouts', description: 'Names pressing into cleaner trigger zones without being fully spent.' },
-  { id: 'pullback', label: 'Pullback Entries', description: 'Leadership names where the next opportunity may come from patience, not speed.' },
-  { id: 'avoid', label: 'Weakness To Avoid', description: 'Moves that look active but are carrying the wrong kind of risk.' },
-  { id: 'sympathy', label: 'Sector Sympathy', description: 'Secondary names riding improving sector structure before they become obvious.' },
+type Timeframe = 'intraday' | 'swing';
+type RiskProfile = 'aggressive' | 'balanced' | 'conservative';
+type SignalType = 'breakout' | 'reversal' | 'momentum' | 'volume' | 'sector-rotation' | 'news';
+
+interface StrategyConfig {
+  timeframe: Timeframe;
+  riskProfile: RiskProfile;
+}
+
+const TIMEFRAMES: { id: Timeframe; label: string; description: string }[] = [
+  { id: 'intraday', label: 'Intraday', description: 'Same-day trades, quick moves' },
+  { id: 'swing', label: 'Swing', description: '2-10 day holding period' },
 ];
 
-const HORIZONS: TradingHorizon[] = ['intraday', 'swing'];
-const SELECTIVITY: Selectivity[] = ['conservative', 'balanced', 'aggressive'];
+const RISK_PROFILES: { id: RiskProfile; label: string; description: string }[] = [
+  { id: 'conservative', label: 'Conservative', description: 'Lower risk, proven setups' },
+  { id: 'balanced', label: 'Balanced', description: 'Moderate risk/reward' },
+  { id: 'aggressive', label: 'Aggressive', description: 'Higher risk, higher potential' },
+];
 
-function toneForChange(value: number) {
-  return value >= 0 ? 'positive' : 'negative';
+const SIGNAL_TYPES: { id: SignalType; label: string; icon: React.ElementType }[] = [
+  { id: 'breakout', label: 'Breakout', icon: TrendingUp },
+  { id: 'reversal', label: 'Reversal', icon: TrendingDown },
+  { id: 'momentum', label: 'Momentum', icon: Zap },
+  { id: 'volume', label: 'Volume Spike', icon: BarChart3 },
+  { id: 'sector-rotation', label: 'Sector Rotation', icon: Users },
+  { id: 'news', label: 'News Move', icon: Sparkles },
+];
+
+function SignalTypeIcon({ type }: { type: SignalType }) {
+  const config = SIGNAL_TYPES.find(s => s.id === type);
+  const Icon = config?.icon || Signal;
+  return <Icon style={{ width: 16, height: 16 }} />;
 }
 
-function toneForSignal(tone: 'bullish' | 'bearish' | 'balanced' | 'neutral') {
-  if (tone === 'bullish') return 'positive' as const;
-  if (tone === 'bearish') return 'negative' as const;
-  if (tone === 'balanced') return 'warning' as const;
-  return 'default' as const;
-}
-
-function QuoteTapeList({ title, items }: { title: string; items: Quote[] }) {
+function ConfidenceMeter({ value }: { value: number }) {
+  const percentage = Math.min(100, Math.max(0, value));
+  const color = percentage >= 70 ? 'var(--green)' : percentage >= 40 ? 'var(--amber)' : 'var(--red)';
+  
   return (
-    <div className="surface-inset">
-      <div className="stat-label">{title}</div>
-      <div className="stack-12" style={{ marginTop: 10 }}>
-        {items.length ? items.map((item) => (
-          <Link key={`${title}-${item.symbol}`} href={`/stocks/${encodeURIComponent(item.symbol)}`} className="list-card" style={{ textDecoration: 'none' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-              <div>
-                <div className="mono" style={{ fontSize: 12, fontWeight: 700 }}>{item.symbol}</div>
-                <div className="metric-footnote">{item.name}</div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div className="mono" style={{ fontSize: 12 }}>{formatCurrency(item.price)}</div>
-                <div className="metric-footnote" style={{ color: item.changePercent >= 0 ? 'var(--green)' : 'var(--red)' }}>{formatPercent(item.changePercent)}</div>
-              </div>
-            </div>
-            {title === 'Most active' ? <div className="metric-footnote">Volume {formatLargeNumber(item.volume)}</div> : null}
-          </Link>
-        )) : <div className="metric-footnote">No names available.</div>}
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ flex: 1, height: 6, background: 'var(--bg-2)', borderRadius: 3, overflow: 'hidden' }}>
+        <div style={{ width: `${percentage}%`, height: '100%', background: color, borderRadius: 3 }} />
       </div>
+      <span className="mono" style={{ fontSize: 12, fontWeight: 600, width: 32 }}>{Math.round(percentage)}%</span>
     </div>
   );
 }
 
-export default function ScannerPage() {
-  const [mode, setMode] = useState<OpportunityMode>('momentum');
-  const [horizon, setHorizon] = useState<TradingHorizon>('intraday');
-  const [selectivity, setSelectivity] = useState<Selectivity>('balanced');
+function OpportunityCardRadar({ 
+  opportunity
+}: { 
+  opportunity: OpportunityCard;
+}) {
+  const isBullish = opportunity.direction === 'bullish';
+  const signalType = opportunity.setup?.toLowerCase().includes('breakout') ? 'breakout' :
+                     opportunity.setup?.toLowerCase().includes('reversal') ? 'reversal' :
+                     opportunity.setup?.toLowerCase().includes('volume') ? 'volume' : 'momentum';
+
+  return (
+    <article className={`card ${isBullish ? 'opportunity-card-bullish' : 'opportunity-card-bearish'}`} style={{ padding: 16 }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+        <div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span className="opportunity-symbol">{opportunity.symbol}</span>
+            <span className={`badge ${isBullish ? 'badge-green' : 'badge-red'}`}>
+              {isBullish ? <TrendingUp style={{ width: 10, height: 10 }} /> : <TrendingDown style={{ width: 10, height: 10 }} />}
+              {opportunity.direction}
+            </span>
+          </div>
+          <div className="opportunity-name">{opportunity.name}</div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div className="opportunity-price">{formatCurrency(opportunity.quote?.price || 0)}</div>
+          <div className={`opportunity-move ${(opportunity.quote?.changePercent || 0) >= 0 ? 'text-green' : 'text-red'}`}>
+            {formatPercent(opportunity.quote?.changePercent || 0)}
+          </div>
+        </div>
+      </div>
+
+      {/* Signal Details */}
+      <div className="surface-inset" style={{ marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <SignalTypeIcon type={signalType as SignalType} />
+            <span style={{ fontWeight: 600, fontSize: 13 }}>{opportunity.setup}</span>
+          </div>
+          <span className="badge badge-muted">{opportunity.state}</span>
+        </div>
+        <div className="metric-footnote" style={{ marginTop: 8, lineHeight: 1.5 }}>
+          {opportunity.whyNow}
+        </div>
+      </div>
+
+      {/* Metrics Grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 12 }}>
+        <div className="opportunity-level">
+          <span>Volume</span>
+          <strong>{formatLargeNumber(opportunity.quote?.volume || 0)}</strong>
+        </div>
+        <div className="opportunity-level">
+          <span>RSI</span>
+          <strong>{opportunity.analytics?.rsi14 || '—'}</strong>
+        </div>
+        <div className="opportunity-level">
+          <span>Sector</span>
+          <strong style={{ fontSize: 11 }}>{opportunity.labels?.[0] || '—'}</strong>
+        </div>
+      </div>
+
+      {/* Confidence */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+          <span className="stat-label">Confidence</span>
+          <span className="mono" style={{ fontSize: 11, fontWeight: 600 }}>{opportunity.confidence}/100</span>
+        </div>
+        <ConfidenceMeter value={opportunity.confidence} />
+      </div>
+
+      {/* Why Explanation */}
+      {opportunity.risk && (
+        <div style={{ marginBottom: 12, padding: 10, background: 'var(--bg-2)', borderRadius: 8 }}>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4 }}>
+            <BrainCircuit style={{ width: 12, height: 12, color: 'var(--text-2)' }} />
+            <span className="stat-label">Why this signal?</span>
+          </div>
+          <div className="metric-footnote">{opportunity.risk}</div>
+        </div>
+      )}
+
+      {/* Actions */}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <Link 
+          href={`/stocks/${encodeURIComponent(opportunity.symbol)}`} 
+          className="btn btn-primary"
+          style={{ flex: 1, fontSize: 11, padding: '8px 12px' }}
+        >
+          View Analysis <ArrowRight style={{ width: 12, height: 12 }} />
+        </Link>
+        <button className="btn btn-ghost" style={{ padding: 8 }}>
+          <Sparkles style={{ width: 14, height: 14 }} />
+        </button>
+      </div>
+    </article>
+  );
+}
+
+export default function RadarPage() {
+  const [config, setConfig] = useState<StrategyConfig>({
+    timeframe: 'swing',
+    riskProfile: 'balanced',
+  });
   const [radar, setRadar] = useState<RadarResponse | null>(null);
-  const [summary, setSummary] = useState<MarketSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<'confidence' | 'urgency' | 'volume'>('confidence');
+  const [signalFilter, setSignalFilter] = useState<SignalType | 'all'>('all');
 
   const loadRadar = useCallback(async () => {
     setRefreshing(true);
     try {
-      const [nextRadar, nextSummary] = await Promise.all([
-        marketAPI.getOpportunityRadar(mode, horizon, selectivity),
-        marketAPI.getMarketSummary(),
-      ]);
-      setRadar(nextRadar);
-      setSummary(nextSummary);
-      setError(null);
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Failed to load radar insights.');
+      const data = await marketAPI.getOpportunityRadar('momentum', config.timeframe, config.riskProfile);
+      setRadar(data);
+    } catch (error) {
+      console.error('Radar load error:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [horizon, mode, selectivity]);
+  }, [config.timeframe, config.riskProfile]);
 
   useEffect(() => {
     void loadRadar();
   }, [loadRadar]);
 
-  useEffect(() => {
-    const refreshInterval = (radar?.refreshIntervalSeconds || 20) * 1000;
-    const handle = window.setInterval(() => {
-      void loadRadar();
-    }, refreshInterval);
+  const filteredOpportunities = radar?.opportunities.filter(opp => {
+    if (signalFilter === 'all') return true;
+    return opp.setup?.toLowerCase().includes(signalFilter);
+  }) || [];
 
-    return () => window.clearInterval(handle);
-  }, [loadRadar, radar?.refreshIntervalSeconds]);
+  const sortedOpportunities = [...filteredOpportunities].sort((a, b) => {
+    switch (sortBy) {
+      case 'confidence':
+        return b.confidence - a.confidence;
+      case 'volume':
+        return (b.quote?.volume || 0) - (a.quote?.volume || 0);
+      case 'urgency':
+        return (b.quote?.changePercent || 0) - (a.quote?.changePercent || 0);
+      default:
+        return 0;
+    }
+  });
 
-  const topOpportunity = radar?.opportunities[0] || null;
-  const selectedMode = useMemo(() => MODES.find((entry) => entry.id === mode), [mode]);
-  const headlineIndices = summary?.indices.slice(0, 3) || [];
+  const liveSignals = radar?.signalFeed?.filter(s => s.strength >= 7) || [];
+  const confirmedSignals = radar?.signalFeed?.filter(s => s.strength < 7) || [];
 
   return (
     <div className="page">
-      <PageHeader
-        kicker="Radar"
-        title="Live market radar across the active tape"
-        description="Radar is the discovery engine. It sweeps the market, auto-generates live signals, and keeps the tape context visible beside the ranked setup board."
-        actions={
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {radar?.generatedAt ? <span className="topbar-pill">Updated {formatTimeAgo(radar.generatedAt)} • {formatIST(new Date(radar.generatedAt))}</span> : null}
-            <TrendBadge tone={radar?.sourceMode === 'ai' ? 'primary' : 'warning'}>{radar?.sourceMode === 'ai' ? 'Groq wording' : 'Rules ranking'}</TrendBadge>
-            <button onClick={() => void loadRadar()} disabled={refreshing} className="btn btn-ghost">
-              <RefreshCw style={{ width: 14, height: 14 }} className={refreshing ? 'anim-spin' : ''} />
-              Refresh
-            </button>
-          </div>
-        }
-      />
-
-      {error ? <TrendBadge tone="warning">{error}</TrendBadge> : null}
-
-      <div className="metric-strip-grid">
-        <MetricTile label="Sectors scanned" value={radar?.coverage.sectorsScanned || 0} tone="primary" icon={Target} subtext={selectedMode?.label || 'Choose a lens'} />
-        <MetricTile label="Stocks analyzed" value={radar?.coverage.stocksAnalyzed || 0} tone="positive" icon={Sparkles} subtext={`${selectivity} selectivity`} />
-        <MetricTile label="Live signals" value={radar?.signalFeed.length || 0} tone="warning" icon={Signal} subtext={topOpportunity?.sector || 'Waiting for a sector lead'} />
-        <MetricTile label="Refresh cadence" value={`${radar?.refreshIntervalSeconds || 20}s`} tone="negative" icon={Clock3} subtext={`${radar?.coverage.matches || 0} ranked setups`} />
+      <div className="page-header">
+        <div>
+          <div className="page-kicker">AI Radar</div>
+          <h1 className="page-title">Opportunity Discovery</h1>
+          <p className="page-subtitle">
+            AI-generated trading opportunities based on strategy, timeframe, and market behavior. 
+            Different from manual screening - signals are auto-detected and ranked by confidence.
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {radar?.generatedAt && (
+            <span className="topbar-pill">
+              <Clock style={{ width: 12, height: 12 }} />
+              Updated {formatTimeAgo(radar.generatedAt)}
+            </span>
+          )}
+          <button onClick={() => loadRadar()} disabled={refreshing} className="btn btn-primary">
+            <RefreshCw style={{ width: 14, height: 14 }} className={refreshing ? 'anim-spin' : ''} />
+            Refresh
+          </button>
+        </div>
       </div>
 
-      <div className="workbench-grid-three">
-        <SectionCard title="Tape Context" subtitle="Keep the index tape beside the signal stream" icon={Activity} tone="primary">
-          {radar ? (
-            <div className="stack-16">
-              <div className="metric-footnote">{radar.narrative}</div>
-              <div className="compact-card-grid">
-                {headlineIndices.map((index) => (
-                  <div key={index.symbol} className="list-card">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                      <div>
-                        <div className="stat-label">Index</div>
-                        <div style={{ marginTop: 8, fontSize: 15, fontWeight: 700 }}>{index.shortName}</div>
-                      </div>
-                      <TrendBadge tone={toneForChange(index.changePercent)}>{formatPercent(index.changePercent)}</TrendBadge>
-                    </div>
-                    <div className="metric-footnote">{formatCurrency(index.price)}</div>
-                  </div>
-                ))}
-              </div>
-              <div className="surface-inset">
-                <div className="stat-label">Top live signal</div>
-                <div className="metric-value">{radar.signalFeed[0]?.symbol || topOpportunity?.symbol || '—'}</div>
-                <div className="metric-footnote">{radar.signalFeed[0]?.detail || topOpportunity?.whyNow || 'Waiting for a ranked signal.'}</div>
-              </div>
+      {/* Strategy Selectors */}
+      <div className="card" style={{ padding: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 24 }}>
+          {/* Timeframe */}
+          <div>
+            <div className="stat-label" style={{ marginBottom: 8 }}>
+              <Calendar style={{ width: 14, height: 14, display: 'inline', marginRight: 6 }} />
+              Timeframe
             </div>
-          ) : (
-            <EmptyPanel title="Radar context loading" description="The live tape overview will appear once the radar sweep completes." icon={Activity} />
-          )}
-        </SectionCard>
-
-        <SectionCard title="Signal Windows" subtitle="Separate tape bursts from session context" icon={Clock3}>
-          {radar ? (
-            <div className="stack-12">
-              {radar.windowInsights.map((entry) => (
-                <div key={entry.window} className="list-card">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                    <div>
-                      <div className="stat-label">Window</div>
-                      <div style={{ marginTop: 8, fontSize: 15, fontWeight: 700 }}>{entry.label}</div>
-                    </div>
-                    <TrendBadge tone={entry.signalCount ? 'positive' : 'warning'}>{entry.signalCount} signals</TrendBadge>
-                  </div>
-                  <div className="metric-footnote">{entry.summary}</div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <EmptyPanel title="Signal windows loading" description="The feed will separate 5-minute bursts from 15-minute and session context once the radar sweep completes." icon={Clock3} />
-          )}
-        </SectionCard>
-
-        <SectionCard title="Radar Lens" subtitle="Switch discovery modes instead of building a manual screen" icon={Target}>
-          <div className="panel-scroll-tight stack-12">
-            {MODES.map((entry) => {
-              const active = entry.id === mode;
-              return (
+            <div style={{ display: 'flex', gap: 8 }}>
+              {TIMEFRAMES.map(tf => (
                 <button
-                  key={entry.id}
-                  type="button"
-                  className="list-card"
-                  onClick={() => setMode(entry.id)}
-                  style={{
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                    borderColor: active ? 'rgba(217, 154, 79, 0.34)' : undefined,
-                    background: active
-                      ? 'linear-gradient(135deg, rgba(217, 154, 79, 0.16), rgba(255,248,236,0.03))'
-                      : undefined,
-                  }}
+                  key={tf.id}
+                  onClick={() => setConfig(prev => ({ ...prev, timeframe: tf.id }))}
+                  className={`btn ${config.timeframe === tf.id ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ flex: 1 }}
                 >
-                  <div className="stat-label">Mode</div>
-                  <div style={{ marginTop: 8, fontSize: 15, fontWeight: 700 }}>{entry.label}</div>
-                  <div className="metric-footnote">{entry.description}</div>
+                  {tf.label}
                 </button>
-              );
-            })}
-          </div>
-
-          <div className="stack-12" style={{ marginTop: 12 }}>
-            <div>
-              <div className="stat-label" style={{ marginBottom: 8 }}>Trading horizon</div>
-              <div className="tab-group">
-                {HORIZONS.map((entry) => (
-                  <button key={entry} type="button" onClick={() => setHorizon(entry)} className={`tab ${horizon === entry ? 'tab-active' : ''}`}>
-                    {entry}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <div className="stat-label" style={{ marginBottom: 8 }}>Selectivity</div>
-              <div className="tab-group">
-                {SELECTIVITY.map((entry) => (
-                  <button key={entry} type="button" onClick={() => setSelectivity(entry)} className={`tab ${selectivity === entry ? 'tab-active' : ''}`}>
-                    {entry}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </SectionCard>
-      </div>
-
-      <div className="workbench-grid">
-        <SectionCard title="Live Signal Feed" subtitle="Auto-generated tape alerts, not a second screener" icon={Signal}>
-          {radar?.signalFeed.length ? (
-            <div className="panel-scroll-tight stack-12">
-              {radar.signalFeed.map((entry) => (
-                <div key={entry.id} className="list-card">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
-                    <div>
-                      <div className="stat-label">{entry.window}</div>
-                      <div style={{ marginTop: 8, fontSize: 15, fontWeight: 700 }}>
-                        {entry.symbol ? <Link href={`/stocks/${encodeURIComponent(entry.symbol)}`} style={{ color: 'inherit', textDecoration: 'none' }}>{entry.title}</Link> : entry.title}
-                      </div>
-                    </div>
-                    <TrendBadge tone={toneForSignal(entry.tone)}>Strength {entry.strength}</TrendBadge>
-                  </div>
-                  <div className="metric-footnote">{entry.detail}</div>
-                  <div className="metric-footnote">{formatTimeAgo(entry.occurredAt)} • {formatIST(new Date(entry.occurredAt))} • {entry.sector}</div>
-                </div>
               ))}
             </div>
-          ) : (
-            <EmptyPanel title="No live signal feed yet" description="The feed will show fresh tape alerts once the current radar sweep finds enough movement." icon={Signal} />
-          )}
-        </SectionCard>
+          </div>
 
-        <SectionCard title="Sector Shift Board" subtitle="Where leadership is broadening or weakening during the current sweep" icon={BrainCircuit}>
-          {radar?.sectorShifts.length ? (
-            <div className="panel-scroll-tight stack-12">
-              {radar.sectorShifts.map((entry) => (
-                <div key={entry.sector} className="list-card">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                    <div>
-                      <div className="stat-label">Sector</div>
-                      <div style={{ marginTop: 8, fontSize: 15, fontWeight: 700 }}>{entry.sector}</div>
-                    </div>
-                    <TrendBadge tone={entry.direction === 'strengthening' ? 'positive' : entry.direction === 'weakening' ? 'negative' : 'warning'}>{entry.direction}</TrendBadge>
-                  </div>
-                  <div className="metric-footnote">{entry.summary}</div>
-                  <div className="metric-footnote">Breadth {formatPercent(entry.breadth, 0)} • Avg move {formatPercent(entry.averageChangePercent)} • {entry.signalCount} live signals</div>
-                </div>
+          {/* Risk Profile */}
+          <div>
+            <div className="stat-label" style={{ marginBottom: 8 }}>
+              <Gauge style={{ width: 14, height: 14, display: 'inline', marginRight: 6 }} />
+              Risk Profile
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {RISK_PROFILES.map(rp => (
+                <button
+                  key={rp.id}
+                  onClick={() => setConfig(prev => ({ ...prev, riskProfile: rp.id }))}
+                  className={`btn ${config.riskProfile === rp.id ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ flex: 1 }}
+                >
+                  {rp.label}
+                </button>
               ))}
             </div>
-          ) : (
-            <EmptyPanel title="Sector shifts unavailable" description="Sector-strength transitions will appear here after the radar builds its feed." icon={BrainCircuit} />
-          )}
-        </SectionCard>
+          </div>
+        </div>
       </div>
 
-      <div className="workbench-grid">
-        <SectionCard title="Opportunity Stream" subtitle="Ranked setups still matter, but the signal feed now sits beside them" icon={Zap}>
-          {loading && !radar ? (
-            <div className="compact-card-grid">
-              {[...Array(6)].map((_, index) => <div key={index} className="skeleton" style={{ height: 220 }} />)}
-            </div>
-          ) : radar?.opportunities.length ? (
-            <div className="panel-scroll">
-              <div className="compact-card-grid">
-                {radar.opportunities.map((opportunity, index) => (
-                  <OpportunityInsightCard key={opportunity.id} opportunity={opportunity} rank={index + 1} compact />
-                ))}
-              </div>
-            </div>
-          ) : (
-            <EmptyPanel title="No ranked setups" description="This lens is currently too selective for the available market structure. Widen selectivity or change the opportunity mode." icon={Zap} />
-          )}
-        </SectionCard>
-
-        <SectionCard title="Tape Movers" subtitle="Cross-check radar signals against the live tape" icon={Activity}>
-          {summary ? (
-            <div className="grid-fit-220">
-              <QuoteTapeList title="Top gainers" items={summary.gainers.slice(0, 4)} />
-              <QuoteTapeList title="Top losers" items={summary.losers.slice(0, 4)} />
-              <QuoteTapeList title="Most active" items={summary.mostActive.slice(0, 4)} />
-            </div>
-          ) : (
-            <EmptyPanel title="Tape movers unavailable" description="Gainers, losers, and active names will appear here once the market summary is ready." icon={Activity} />
-          )}
-        </SectionCard>
+      {/* Stats */}
+      <div className="metric-strip-grid">
+        <div className="metric-card">
+          <div className="stat-label">Signals Found</div>
+          <div className="metric-value">{radar?.signalFeed?.length || 0}</div>
+          <div className="metric-footnote">Total detected</div>
+        </div>
+        <div className="metric-card">
+          <div className="stat-label">Live Signals</div>
+          <div className="metric-value" style={{ color: 'var(--green)' }}>{liveSignals.length}</div>
+          <div className="metric-footnote">Strength 7+</div>
+        </div>
+        <div className="metric-card">
+          <div className="stat-label">Confirmed</div>
+          <div className="metric-value" style={{ color: 'var(--amber)' }}>{confirmedSignals.length}</div>
+          <div className="metric-footnote">Strength &lt; 7</div>
+        </div>
+        <div className="metric-card">
+          <div className="stat-label">Opportunities</div>
+          <div className="metric-value">{sortedOpportunities.length}</div>
+          <div className="metric-footnote">Ranked by {sortBy}</div>
+        </div>
       </div>
+
+      {/* Signal Types & Sorting */}
+      <div className="card" style={{ padding: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              onClick={() => setSignalFilter('all')}
+              className={`btn ${signalFilter === 'all' ? 'btn-primary' : 'btn-ghost'}`}
+              style={{ padding: '6px 12px' }}
+            >
+              All Signals
+            </button>
+            {SIGNAL_TYPES.map(st => (
+              <button
+                key={st.id}
+                onClick={() => setSignalFilter(st.id)}
+                className={`btn ${signalFilter === st.id ? 'btn-primary' : 'btn-ghost'}`}
+                style={{ padding: '6px 12px', fontSize: 11 }}
+              >
+                <st.icon style={{ width: 12, height: 12, marginRight: 4 }} />
+                {st.label}
+              </button>
+            ))}
+          </div>
+          
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span className="stat-label">Sort by:</span>
+            <div className="tab-group">
+              <button onClick={() => setSortBy('confidence')} className={`tab ${sortBy === 'confidence' ? 'tab-active' : ''}`}>
+                Confidence
+              </button>
+              <button onClick={() => setSortBy('urgency')} className={`tab ${sortBy === 'urgency' ? 'tab-active' : ''}`}>
+                Urgency
+              </button>
+              <button onClick={() => setSortBy('volume')} className={`tab ${sortBy === 'volume' ? 'tab-active' : ''}`}>
+                Volume
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Opportunity Cards */}
+      {loading && !radar ? (
+        <div className="compact-card-grid">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="skeleton" style={{ height: 320 }} />
+          ))}
+        </div>
+      ) : sortedOpportunities.length === 0 ? (
+        <div className="empty-state">
+          <Target style={{ width: 40, height: 40, color: 'var(--text-3)' }} />
+          <div style={{ fontWeight: 600, fontSize: 16 }}>No signals found</div>
+          <div className="metric-footnote">Try adjusting your timeframe or risk profile</div>
+        </div>
+      ) : (
+        <div className="compact-card-grid">
+          {sortedOpportunities.map((opportunity, index) => (
+            <OpportunityCardRadar
+              key={`${opportunity.id}-${index}`}
+              opportunity={opportunity}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

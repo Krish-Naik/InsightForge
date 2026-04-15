@@ -239,4 +239,53 @@ export const marketController = {
     );
     res.json({ success: true, data, timestamp: new Date().toISOString() });
   }),
+
+  runScreenerFilters: asyncHandler(async (req: Request, res: Response) => {
+    setCacheHeaders(res, 30);
+    const { filters, query, symbols } = req.body;
+    
+    let stockSymbols: string[] = symbols;
+    if (!stockSymbols || stockSymbols.length === 0) {
+      stockSymbols = [...NIFTY_50_STOCKS];
+    }
+    
+    const quotes = await MarketDataService.getQuotes(stockSymbols);
+    
+    let results = [...quotes];
+    
+    if (filters && filters.length > 0) {
+      const enabledFilters = filters.filter((f: { enabled: boolean }) => f.enabled);
+      
+      for (const filter of enabledFilters) {
+        const { metric, operator, value } = filter as { metric: string; operator: string; value: string };
+        const filterValue = parseFloat(value);
+        
+        if (!isNaN(filterValue)) {
+          results = results.filter(q => {
+            const stockValue = (q as unknown as Record<string, unknown>)[metric] as number | undefined;
+            if (stockValue === undefined || stockValue === null) return true;
+            
+            switch (operator) {
+              case '>': return stockValue > filterValue;
+              case '<': return stockValue < filterValue;
+              case '>=': return stockValue >= filterValue;
+              case '<=': return stockValue <= filterValue;
+              case '=': return stockValue === filterValue;
+              default: return true;
+            }
+          });
+        }
+      }
+    }
+    
+    if (query && query.trim()) {
+      const terms = query.toLowerCase().split(/\s+and\s+|\s+or\s+/i);
+      results = results.filter(q => {
+        const searchText = `${q.symbol} ${q.name}`.toLowerCase();
+        return terms.every((term: string) => searchText.includes(term.trim()));
+      });
+    }
+    
+    res.json({ success: true, data: results.slice(0, 100), timestamp: new Date().toISOString() });
+  }),
 };
