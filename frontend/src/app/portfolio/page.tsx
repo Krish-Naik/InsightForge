@@ -338,8 +338,8 @@ export default function PortfolioPage() {
     <div className="page">
       <PageHeader
         kicker="Portfolio"
-        title={activePortfolio?.name || 'Portfolio'}
-        description="Track your holdings with delayed quotes, sector allocation, day P&L, and cost-basis aware performance. Persistence remains local for now, but the UI and analytics are structured for a production-grade portfolio workspace."
+        title={activePortfolio?.name || 'Conviction And Carry'}
+        description="Portfolio should help traders judge conviction, exposure, and carry-forward risk, not just stare at mark-to-market numbers."
         actions={
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             {lastUpdated ? <span className="topbar-pill">Updated {formatIST(lastUpdated)}</span> : null}
@@ -358,7 +358,7 @@ export default function PortfolioPage() {
         }
       />
 
-      <div className="grid-fit-220">
+      <div className="metric-strip-grid">
         <MetricTile label="Invested" value={formatCurrency(totals.invested)} tone="primary" icon={Wallet} subtext="Total cost basis of the active portfolio" />
         <MetricTile label="Current value" value={formatCurrency(totals.current)} tone="primary" icon={Wallet} subtext="Marked using delayed current prices" />
         <MetricTile label="Total P&L" value={`${totals.pnl >= 0 ? '+' : ''}${formatCurrency(totals.pnl)}`} tone={totals.pnl >= 0 ? 'positive' : 'negative'} icon={Wallet} subtext={formatPercent(totals.pnlPercent)} />
@@ -371,14 +371,21 @@ export default function PortfolioPage() {
         </div>
       ) : null}
 
-      <div className="two-column-layout">
-        <div className="stack-16">
+      <div className="workbench-grid">
+        <div className="workbench-column">
           <SectionCard title="Portfolios" subtitle="Manage separate books for core and tactical exposure" icon={FolderPlus}>
-            <div className="stack-12">
+            <div className="panel-scroll-tight stack-12">
               {portfolios.map((portfolio) => {
                 const active = activePortfolio?.id === portfolio.id;
                 return (
-                  <div key={portfolio.id} className="metric-card" style={{ padding: 14, borderColor: active ? 'rgba(77, 199, 255, 0.34)' : undefined }}>
+                  <div
+                    key={portfolio.id}
+                    className="list-card"
+                    style={{
+                      borderColor: active ? 'rgba(217, 154, 79, 0.34)' : undefined,
+                      background: active ? 'linear-gradient(135deg, rgba(217, 154, 79, 0.16), rgba(255,248,236,0.03))' : undefined,
+                    }}
+                  >
                     {editingId === portfolio.id ? (
                       <div className="stack-8">
                         <input value={draftName} onChange={(event) => setDraftName(event.target.value)} className="input" />
@@ -448,8 +455,8 @@ export default function PortfolioPage() {
                             name: result.name,
                             sector: result.sectors?.[0] || current.sector,
                           }))}
-                          className="metric-card"
-                          style={{ padding: 14, cursor: 'pointer', textAlign: 'left' }}
+                          className="list-card"
+                          style={{ cursor: 'pointer', textAlign: 'left' }}
                         >
                           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
                             <div>
@@ -480,14 +487,14 @@ export default function PortfolioPage() {
           </SectionCard>
         </div>
 
-        <div className="stack-16">
+        <div className="workbench-column">
           <SectionCard title="Allocation" subtitle="Current sector exposure by marked value" icon={PieChart}>
             {allocation.length ? (
-              <div className="stack-12">
+              <div className="panel-scroll-tight stack-12">
                 {allocation.map(([sector, value]) => {
                   const weight = totals.current > 0 ? (value / totals.current) * 100 : 0;
                   return (
-                    <div key={sector} className="metric-card" style={{ padding: 14 }}>
+                    <div key={sector} className="list-card">
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
                         <div>
                           <div style={{ fontSize: 12, fontWeight: 700 }}>{sector}</div>

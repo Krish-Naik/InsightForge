@@ -7,7 +7,6 @@ import { config }  from './config/index.js';
 import { connectDB, isDbConnected } from './config/database.js';
 import { logger }    from './utils/logger.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
-import { apiLimiter }  from './middleware/rateLimiter.js';
 import { MarketDataService } from './services/marketDataService.js';
 import { MarketUniverseService } from './services/marketUniverseService.js';
 
@@ -61,6 +60,12 @@ app.get('/api/health', (_req: Request, res: Response) => {
       news: {
         configured: true,
         provider: 'rss',
+      },
+      insights: {
+        configured: true,
+        mode: config.ai.enabled ? 'ai-assisted' : 'deterministic',
+        provider: config.ai.enabled ? config.ai.provider : null,
+        model: config.ai.enabled ? config.ai.model : null,
       },
     },
   });

@@ -8,23 +8,23 @@ type Tone = 'default' | 'primary' | 'positive' | 'negative' | 'warning';
 const toneStyles: Record<Tone, CSSProperties> = {
   default: {
     borderColor: 'var(--border)',
-    background: 'linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015))',
+    background: 'linear-gradient(180deg, rgba(255,248,236,0.05), rgba(255,248,236,0.02))',
   },
   primary: {
-    borderColor: 'rgba(77, 199, 255, 0.28)',
-    background: 'linear-gradient(135deg, rgba(77, 199, 255, 0.12), rgba(19, 224, 161, 0.08))',
+    borderColor: 'rgba(214, 158, 79, 0.34)',
+    background: 'linear-gradient(135deg, rgba(214, 158, 79, 0.18), rgba(241, 215, 167, 0.08))',
   },
   positive: {
-    borderColor: 'rgba(50, 211, 139, 0.24)',
-    background: 'linear-gradient(135deg, rgba(50, 211, 139, 0.12), rgba(77, 199, 255, 0.04))',
+    borderColor: 'rgba(92, 184, 150, 0.28)',
+    background: 'linear-gradient(135deg, rgba(92, 184, 150, 0.16), rgba(255,248,236,0.04))',
   },
   negative: {
-    borderColor: 'rgba(255, 108, 121, 0.24)',
-    background: 'linear-gradient(135deg, rgba(255, 108, 121, 0.12), rgba(255, 191, 94, 0.04))',
+    borderColor: 'rgba(201, 105, 90, 0.28)',
+    background: 'linear-gradient(135deg, rgba(201, 105, 90, 0.16), rgba(255,248,236,0.03))',
   },
   warning: {
-    borderColor: 'rgba(255, 191, 94, 0.24)',
-    background: 'linear-gradient(135deg, rgba(255, 191, 94, 0.12), rgba(77, 199, 255, 0.04))',
+    borderColor: 'rgba(234, 186, 96, 0.3)',
+    background: 'linear-gradient(135deg, rgba(234, 186, 96, 0.18), rgba(255,248,236,0.04))',
   },
 };
 
@@ -77,7 +77,7 @@ export function SectionCard({
   style?: CSSProperties;
 }) {
   return (
-    <section className="panel" style={{ ...toneStyles[tone], ...style }}>
+    <section className="panel panel-dense" style={{ ...toneStyles[tone], ...style }}>
       <div className="panel-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {Icon ? <Icon style={{ width: 16, height: 16, color: toneText[tone] }} /> : null}
@@ -107,7 +107,7 @@ export function MetricTile({
   icon?: LucideIcon;
 }) {
   return (
-    <div className="metric-card" style={toneStyles[tone]}>
+    <div className="metric-card metric-card-dense" style={toneStyles[tone]}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
         <div>
           <div className="stat-label">{label}</div>

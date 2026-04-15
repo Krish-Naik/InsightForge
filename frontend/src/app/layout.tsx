@@ -29,9 +29,9 @@ const monoFont = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title:       'StockPulse — Indian Markets',
-  description: 'Professional real-time stock market terminal for NSE & BSE — live quotes, charts, portfolio & news.',
-  keywords:    'NSE, BSE, Indian stocks, NIFTY, SENSEX, stock charts, portfolio tracker',
+  title:       'StockPulse — Intelligent Trading Companion',
+  description: 'Decision-first market companion for Indian retail traders — ranked opportunities, market narratives, sector rotation, watchlists, and recap.',
+  keywords:    'NSE, BSE, Indian stocks, trading companion, stock stories, market narratives, sector rotation, watchlist, recap',
 };
 
 export const viewport: Viewport = {
@@ -44,8 +44,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" suppressHydrationWarning>
       <head>
         <link rel="icon" href="/favicon.ico" />
-        <link rel="preconnect" href="https://s3.tradingview.com" />
-        <link rel="dns-prefetch" href="https://s3.tradingview.com" />
       </head>
       <body className={`${displayFont.variable} ${bodyFont.variable} ${monoFont.variable}`}>
         <MarketStreamProvider>

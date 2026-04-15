@@ -1,395 +1,313 @@
 'use client';
 
-import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  ArrowUpRight,
-  ArrowUpDown,
-  Filter,
-  RefreshCw,
-  Search,
-  SlidersHorizontal,
-  Sparkles,
-} from 'lucide-react';
-import { HistoricalSeriesChart } from '@/components/charts/HistoricalSeriesChart';
+import { Compass, Filter, RefreshCw, ShieldCheck, Sparkles, Target } from 'lucide-react';
+import { OpportunityInsightCard } from '@/components/ui/insight-kit';
 import { EmptyPanel, MetricTile, PageHeader, SectionCard, TrendBadge } from '@/components/ui/page-kit';
-import { marketAPI, type ScreenerMetric, type SearchResult } from '@/lib/api';
-import { formatCurrency, formatNumber, formatPercent } from '@/lib/format';
-import { searchCatalogStocks, useMarketCatalog } from '@/lib/hooks/useMarketCatalog';
-import { useDebounce } from '@/lib/hooks/useDebounce';
+import { marketAPI, type GuidedScreenerResponse, type ScreenerFilters, type ScreenerPlaybook, type ScreenerSort, type SectorOverview, type Selectivity, type TradingHorizon } from '@/lib/api';
+import { formatIST, formatTimeAgo } from '@/lib/format';
 
-type SortKey =
-  | 'symbol'
-  | 'currentPrice'
-  | 'changePercent'
-  | 'momentumScore'
-  | 'rsi14'
-  | 'volumeRatio'
-  | 'peRatio'
-  | 'priceToBook'
-  | 'revenueGrowth';
+const PLAYBOOKS: Array<{ id: ScreenerPlaybook; label: string; description: string }> = [
+  { id: 'leadership', label: 'Strong stocks in strong sectors', description: 'Find confirmed leaders after a broad market sweep.' },
+  { id: 'quality', label: 'Quality names with improving trend', description: 'Blend durable trend quality with fundamentals when the provider supplies them.' },
+  { id: 'pullback', label: 'Pullbacks in leadership', description: 'Look for second-chance entries rather than late chases.' },
+  { id: 'sympathy', label: 'Secondary names in hot sectors', description: 'Spot lagging names in sectors where participation is broadening.' },
+  { id: 'avoid', label: 'What to leave alone', description: 'Use the screener defensively when market quality is fading.' },
+];
 
-type PresetFilter = 'all' | 'momentum' | 'value' | 'quality';
+const SORTS: Array<{ id: ScreenerSort; label: string }> = [
+  { id: 'score', label: 'Best fit' },
+  { id: 'momentum', label: 'Momentum' },
+  { id: 'volume', label: 'Volume' },
+  { id: 'breakout', label: 'Breakout' },
+  { id: 'sector', label: 'Sector strength' },
+  { id: 'value', label: 'Quality / value' },
+];
 
-function safeNumber(value: number | null | undefined): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : Number.NEGATIVE_INFINITY;
+const EMPTY_FILTERS: ScreenerFilters = {};
+
+function parseFilterValue(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
-function applyPresetFilter(rows: ScreenerMetric[], preset: PresetFilter): ScreenerMetric[] {
-  if (preset === 'momentum') {
-    return rows.filter((row) => (row.momentumScore || 0) >= 25 && (row.volumeRatio || 0) >= 1.2);
-  }
-
-  if (preset === 'value') {
-    return rows.filter((row) => {
-      const pe = row.peRatio;
-      const priceToBook = row.priceToBook;
-      return pe !== null && pe !== undefined && pe > 0 && pe <= 25 && priceToBook !== null && priceToBook !== undefined && priceToBook <= 4;
-    });
-  }
-
-  if (preset === 'quality') {
-    return rows.filter((row) => {
-      const revenueGrowth = row.revenueGrowth;
-      const profitMargins = row.profitMargins;
-      return revenueGrowth !== null && revenueGrowth !== undefined && revenueGrowth >= 8
-        && profitMargins !== null && profitMargins !== undefined && profitMargins >= 8;
-    });
-  }
-
-  return rows;
+function FilterInput({
+  label,
+  value,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+  value: number | null | undefined;
+  placeholder: string;
+  onChange: (nextValue: string) => void;
+}) {
+  return (
+    <div>
+      <div className="stat-label" style={{ marginBottom: 8 }}>{label}</div>
+      <input
+        className="input"
+        inputMode="decimal"
+        value={value ?? ''}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+      />
+    </div>
+  );
 }
 
 export default function ScreenerPage() {
-  const { catalog } = useMarketCatalog();
-  const [rows, setRows] = useState<ScreenerMetric[]>([]);
+  const [playbook, setPlaybook] = useState<ScreenerPlaybook>('leadership');
+  const [horizon, setHorizon] = useState<TradingHorizon>('swing');
+  const [selectivity, setSelectivity] = useState<Selectivity>('balanced');
+  const [sortBy, setSortBy] = useState<ScreenerSort>('score');
+  const [sector, setSector] = useState<string | 'all'>('all');
+  const [draftFilters, setDraftFilters] = useState<ScreenerFilters>(EMPTY_FILTERS);
+  const [appliedFilters, setAppliedFilters] = useState<ScreenerFilters>(EMPTY_FILTERS);
+  const [screen, setScreen] = useState<GuidedScreenerResponse | null>(null);
+  const [sectors, setSectors] = useState<SectorOverview[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
-  const [sector, setSector] = useState('All');
-  const [preset, setPreset] = useState<PresetFilter>('all');
-  const [sortKey, setSortKey] = useState<SortKey>('momentumScore');
-  const [sortAsc, setSortAsc] = useState(false);
-  const [modeLabel, setModeLabel] = useState('Nifty 50 delayed scan');
-  const [previewSymbol, setPreviewSymbol] = useState<string | null>(null);
-  const [previewPeriod, setPreviewPeriod] = useState<'1y' | '2y' | '5y' | '10y'>('10y');
-  const debouncedSearch = useDebounce(search, 350);
 
-  const sectorOptions = useMemo(() => ['All', ...Object.keys(catalog?.sectors || {})], [catalog]);
-
-  const loadRows = useCallback(async () => {
-    if (!catalog) return;
-
-    setLoading(true);
+  const loadResults = useCallback(async () => {
+    setRefreshing(true);
     try {
-      let symbols: string[] = [];
-
-      if (debouncedSearch.trim().length >= 2) {
-        const localMatches: SearchResult[] = searchCatalogStocks(catalog, debouncedSearch, 12).map((entry) => ({
-          symbol: entry.symbol,
-          name: entry.name,
-          exchange: entry.exchange,
-          type: 'EQUITY',
-          sectors: entry.sectors,
-          inNifty50: entry.inNifty50,
-        }));
-        const remoteMatches = await marketAPI.searchStocks(debouncedSearch) as SearchResult[];
-        const combined = [...remoteMatches, ...localMatches.filter((entry) => !remoteMatches.some((remote) => remote.symbol === entry.symbol))];
-        const filtered = sector === 'All'
-          ? combined
-          : combined.filter((entry) => !entry.sectors?.length || entry.sectors.includes(sector));
-        symbols = [...new Set(filtered.map((entry) => entry.symbol))].slice(0, 30);
-        setModeLabel('Search-driven market universe');
-      } else if (sector !== 'All') {
-        symbols = catalog.sectors[sector] || [];
-        setModeLabel(`${sector} delayed scan`);
-      } else {
-        symbols = catalog.nifty50 || [];
-        setModeLabel('Nifty 50 delayed scan');
-      }
-
-      if (!symbols.length) {
-        setRows([]);
-        setError(null);
-        setLoading(false);
-        return;
-      }
-
-      const metrics = await marketAPI.getAnalytics(symbols);
-      setRows(metrics || []);
+      const [nextScreen, nextSectors] = await Promise.all([
+        marketAPI.getGuidedScreener(playbook, horizon, selectivity, sortBy, sector, appliedFilters),
+        marketAPI.getAllSectorsData(),
+      ]);
+      setScreen(nextScreen);
+      setSectors(nextSectors);
       setError(null);
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Failed to load screener rows.');
-      setRows([]);
+      setError(nextError instanceof Error ? nextError.message : 'Failed to load guided screener ideas.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }, [catalog, debouncedSearch, sector]);
+  }, [appliedFilters, horizon, playbook, sector, selectivity, sortBy]);
 
   useEffect(() => {
-    loadRows();
-  }, [loadRows]);
+    void loadResults();
+  }, [loadResults]);
 
-  const filteredRows = useMemo(() => applyPresetFilter(rows, preset), [rows, preset]);
+  const activePlaybook = useMemo(() => PLAYBOOKS.find((entry) => entry.id === playbook) || PLAYBOOKS[0], [playbook]);
+  const sectorOptions = useMemo(() => ['all', ...sectors.map((entry) => entry.sector)], [sectors]);
 
-  const sortedRows = useMemo(() => {
-    const nextRows = [...filteredRows];
-    nextRows.sort((left, right) => {
-      if (sortKey === 'symbol') {
-        return sortAsc ? left.symbol.localeCompare(right.symbol) : right.symbol.localeCompare(left.symbol);
-      }
+  const updateFilter = useCallback((key: keyof ScreenerFilters, rawValue: string) => {
+    setDraftFilters((current) => ({
+      ...current,
+      [key]: parseFilterValue(rawValue),
+    }));
+  }, []);
 
-      const leftValue = safeNumber(left[sortKey] as number | null | undefined);
-      const rightValue = safeNumber(right[sortKey] as number | null | undefined);
-      return sortAsc ? leftValue - rightValue : rightValue - leftValue;
-    });
-    return nextRows;
-  }, [filteredRows, sortAsc, sortKey]);
+  const applyFilters = useCallback(() => {
+    setAppliedFilters({ ...draftFilters });
+  }, [draftFilters]);
 
-  const avgMomentum = useMemo(() => {
-    if (!sortedRows.length) return 0;
-    return sortedRows.reduce((sum, row) => sum + (row.momentumScore || 0), 0) / sortedRows.length;
-  }, [sortedRows]);
-  const avgPe = useMemo(() => {
-    const usable = sortedRows.filter((row) => row.peRatio !== null && row.peRatio !== undefined);
-    if (!usable.length) return null;
-    return usable.reduce((sum, row) => sum + (row.peRatio || 0), 0) / usable.length;
-  }, [sortedRows]);
-  const avgRevenueGrowth = useMemo(() => {
-    const usable = sortedRows.filter((row) => row.revenueGrowth !== null && row.revenueGrowth !== undefined);
-    if (!usable.length) return null;
-    return usable.reduce((sum, row) => sum + (row.revenueGrowth || 0), 0) / usable.length;
-  }, [sortedRows]);
-
-  useEffect(() => {
-    if (!sortedRows.length) {
-      setPreviewSymbol(null);
-      return;
-    }
-
-    if (!previewSymbol || !sortedRows.some((row) => row.symbol === previewSymbol)) {
-      setPreviewSymbol(sortedRows[0].symbol);
-    }
-  }, [previewSymbol, sortedRows]);
-
-  const previewRow = useMemo(
-    () => sortedRows.find((row) => row.symbol === previewSymbol) || sortedRows[0] || null,
-    [previewSymbol, sortedRows],
-  );
-
-  const onSort = (key: SortKey) => {
-    if (sortKey === key) {
-      setSortAsc((current) => !current);
-      return;
-    }
-
-    setSortKey(key);
-    setSortAsc(false);
-  };
-
-  const SortHeader = ({ column, label }: { column: SortKey; label: string }) => (
-    <th onClick={() => onSort(column)} style={{ cursor: 'pointer' }}>
-      <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-        {label}
-        <ArrowUpDown style={{ width: 11, height: 11, color: sortKey === column ? 'var(--primary)' : 'var(--text-3)' }} />
-      </span>
-    </th>
-  );
+  const clearFilters = useCallback(() => {
+    setDraftFilters(EMPTY_FILTERS);
+    setAppliedFilters(EMPTY_FILTERS);
+  }, []);
 
   return (
     <div className="page">
       <PageHeader
-        kicker="Fundamental Screener"
-        title="Momentum plus valuation in one scan"
-        description="This screener combines delayed market structure with trailing valuation, revenue growth, profitability, RSI, and participation metrics. Full-market scanning is intentionally narrowed through search, sector focus, and liquid universes to stay within public data limits."
+        kicker="Guided Screener"
+        title="Market-wide discovery with real screen controls"
+        description="Guided Screener is the deliberate workflow. Start with a playbook, then narrow the market with structured filters and transparent ranking logic."
         actions={
-          <button onClick={loadRows} disabled={loading} className="btn btn-ghost">
-            <RefreshCw style={{ width: 14, height: 14 }} className={loading ? 'anim-spin' : ''} />
-            Refresh screener
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {screen?.generatedAt ? <span className="topbar-pill">Updated {formatTimeAgo(screen.generatedAt)} • {formatIST(new Date(screen.generatedAt))}</span> : null}
+            <TrendBadge tone={screen?.sourceMode === 'ai' ? 'primary' : 'warning'}>{screen?.sourceMode === 'ai' ? 'Groq phrasing' : 'Rules-first'}</TrendBadge>
+            <button onClick={() => void loadResults()} disabled={refreshing} className="btn btn-ghost">
+              <RefreshCw style={{ width: 14, height: 14 }} className={refreshing ? 'anim-spin' : ''} />
+              Refresh
+            </button>
+          </div>
         }
       />
 
       {error ? <TrendBadge tone="warning">{error}</TrendBadge> : null}
 
-      <div className="two-column-layout">
-        <SectionCard title="Filters" subtitle="Scope the scan before fetching delayed analytics" icon={Filter}>
-          <div className="stack-16">
-            <div style={{ position: 'relative' }}>
-              <Search style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, color: 'var(--text-3)' }} />
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search NSE symbols or company names"
-                className="input"
-                style={{ paddingLeft: 38 }}
-              />
+      <div className="metric-strip-grid">
+        <MetricTile label="Playbook" value={activePlaybook.label} tone="primary" icon={Compass} subtext={activePlaybook.description} />
+        <MetricTile label="Sector focus" value={screen?.sector === 'all' ? 'All sectors' : screen?.sector || 'All sectors'} tone="positive" icon={Target} subtext={`${screen?.coverage.sectorsScanned || 0} sectors scanned`} />
+        <MetricTile label="Base matches" value={screen?.diagnostics.baseMatches || 0} tone="warning" icon={Sparkles} subtext={`${screen?.coverage.matches || 0} final matches`} />
+        <MetricTile label="Sort" value={SORTS.find((entry) => entry.id === sortBy)?.label || 'Best fit'} tone="negative" icon={Filter} subtext={`${screen?.diagnostics.activeFilters.length || 0} active filters`} />
+      </div>
+
+      <div className="workbench-grid-three">
+        <SectionCard title="Playbooks" subtitle="Start with the type of opportunity you want to discover" icon={Compass}>
+          <div className="panel-scroll-tight stack-12">
+            {PLAYBOOKS.map((entry) => {
+              const active = entry.id === playbook;
+              return (
+                <button
+                  key={entry.id}
+                  type="button"
+                  className="list-card"
+                  onClick={() => setPlaybook(entry.id)}
+                  style={{
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    borderColor: active ? 'rgba(217, 154, 79, 0.34)' : undefined,
+                    background: active ? 'linear-gradient(135deg, rgba(217, 154, 79, 0.16), rgba(255,248,236,0.03))' : undefined,
+                  }}
+                >
+                  <div className="stat-label">Playbook</div>
+                  <div style={{ marginTop: 8, fontSize: 15, fontWeight: 700 }}>{entry.label}</div>
+                  <div className="metric-footnote">{entry.description}</div>
+                </button>
+              );
+            })}
+          </div>
+        </SectionCard>
+
+        <SectionCard title="Screen Controls" subtitle="Macro controls that reshape the research universe" icon={Filter}>
+          <div className="stack-12">
+            <div>
+              <div className="stat-label" style={{ marginBottom: 8 }}>Sector focus</div>
+              <select value={sector} onChange={(event) => setSector(event.target.value)} className="input">
+                {sectorOptions.map((entry) => (
+                  <option key={entry} value={entry}>{entry === 'all' ? 'All sectors' : entry}</option>
+                ))}
+              </select>
             </div>
 
             <div>
-              <div className="stat-label" style={{ marginBottom: 8 }}>Sector</div>
+              <div className="stat-label" style={{ marginBottom: 8 }}>Sort results by</div>
               <div className="tab-group">
-                {sectorOptions.map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => setSector(option)}
-                    className={`tab ${sector === option ? 'tab-active' : ''}`}
-                  >
-                    {option}
-                  </button>
+                {SORTS.map((entry) => (
+                  <button key={entry.id} type="button" onClick={() => setSortBy(entry.id)} className={`tab ${sortBy === entry.id ? 'tab-active' : ''}`}>{entry.label}</button>
                 ))}
               </div>
             </div>
 
             <div>
-              <div className="stat-label" style={{ marginBottom: 8 }}>Preset</div>
+              <div className="stat-label" style={{ marginBottom: 8 }}>Horizon</div>
               <div className="tab-group">
-                {[
-                  { id: 'all', label: 'All' },
-                  { id: 'momentum', label: 'Momentum' },
-                  { id: 'value', label: 'Value' },
-                  { id: 'quality', label: 'Quality' },
-                ].map((option) => (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => setPreset(option.id as PresetFilter)}
-                    className={`tab ${preset === option.id ? 'tab-active' : ''}`}
-                  >
-                    {option.label}
-                  </button>
+                {(['intraday', 'swing'] as TradingHorizon[]).map((entry) => (
+                  <button key={entry} type="button" onClick={() => setHorizon(entry)} className={`tab ${horizon === entry ? 'tab-active' : ''}`}>{entry}</button>
                 ))}
               </div>
             </div>
 
-            <div className="metric-card">
-              <div className="stat-label">Current mode</div>
-              <div className="metric-value">{modeLabel}</div>
-              <div className="metric-footnote">
-                Search expands to the broader market universe. Otherwise the screener stays on a limited basket for API safety.
+            <div>
+              <div className="stat-label" style={{ marginBottom: 8 }}>Selectivity</div>
+              <div className="tab-group">
+                {(['conservative', 'balanced', 'aggressive'] as Selectivity[]).map((entry) => (
+                  <button key={entry} type="button" onClick={() => setSelectivity(entry)} className={`tab ${selectivity === entry ? 'tab-active' : ''}`}>{entry}</button>
+                ))}
               </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button type="button" onClick={applyFilters} className="btn btn-primary">Run screen</button>
+              <button type="button" onClick={clearFilters} className="btn btn-ghost">Clear filters</button>
             </div>
           </div>
         </SectionCard>
 
-        <div className="stack-16">
-          <SectionCard title="Snapshot" subtitle="Fast summary of the visible screener slice" icon={SlidersHorizontal}>
-            <div className="grid-fit-180">
-              <MetricTile label="Visible rows" value={sortedRows.length} tone="primary" icon={Sparkles} />
-              <MetricTile label="Avg momentum" value={formatNumber(avgMomentum)} tone={avgMomentum >= 0 ? 'positive' : 'negative'} icon={Sparkles} />
-              <MetricTile label="Avg PE" value={avgPe !== null ? formatNumber(avgPe) : '—'} tone="warning" icon={Filter} />
-              <MetricTile label="Avg revenue %" value={avgRevenueGrowth !== null ? formatPercent(avgRevenueGrowth) : '—'} tone="positive" icon={Sparkles} />
-            </div>
-          </SectionCard>
-
-          <SectionCard title="Long-range line preview" subtitle="The main table stays focused on screening, while this panel gives a multi-year line view before you open the full research page" icon={Sparkles}>
-            {previewRow ? (
-              <div className="stack-16">
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <div>
-                    <div className="stat-label">Preview symbol</div>
-                    <div className="metric-value">{previewRow.symbol}</div>
-                    <div className="metric-footnote">{previewRow.name}</div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <TrendBadge tone={previewRow.changePercent >= 0 ? 'positive' : 'negative'}>{formatPercent(previewRow.changePercent)}</TrendBadge>
-                    <TrendBadge tone={previewRow.trend === 'bullish' ? 'positive' : previewRow.trend === 'bearish' ? 'negative' : 'warning'}>{previewRow.trend || 'neutral'}</TrendBadge>
-                  </div>
-                </div>
-
-                <div className="tab-group">
-                  {[
-                    { id: '1y', label: '1Y' },
-                    { id: '2y', label: '2Y' },
-                    { id: '5y', label: '5Y' },
-                    { id: '10y', label: '10Y' },
-                  ].map((entry) => (
-                    <button
-                      key={entry.id}
-                      type="button"
-                      onClick={() => setPreviewPeriod(entry.id as '1y' | '2y' | '5y' | '10y')}
-                      className={`tab ${previewPeriod === entry.id ? 'tab-active' : ''}`}
-                    >
-                      {entry.label}
-                    </button>
-                  ))}
-                </div>
-
-                <HistoricalSeriesChart symbol={previewRow.symbol} period={previewPeriod} variant="line" height={320} />
-              </div>
-            ) : (
-              <EmptyPanel title="No preview symbol" description="The line preview appears once the screener has at least one matching row." icon={Sparkles} />
-            )}
-          </SectionCard>
-        </div>
+        <SectionCard title="Numeric Filters" subtitle="Price, momentum, participation, and valuation thresholds" icon={Filter}>
+          <div className="grid-fit-180">
+            <FilterInput label="Min price" value={draftFilters.minPrice} placeholder="e.g. 200" onChange={(value) => updateFilter('minPrice', value)} />
+            <FilterInput label="Max price" value={draftFilters.maxPrice} placeholder="e.g. 2500" onChange={(value) => updateFilter('maxPrice', value)} />
+            <FilterInput label="Min momentum" value={draftFilters.minMomentumScore} placeholder="e.g. 20" onChange={(value) => updateFilter('minMomentumScore', value)} />
+            <FilterInput label="Min volume ratio" value={draftFilters.minVolumeRatio} placeholder="e.g. 1.2" onChange={(value) => updateFilter('minVolumeRatio', value)} />
+            <FilterInput label="Max RSI" value={draftFilters.maxRsi14} placeholder="e.g. 68" onChange={(value) => updateFilter('maxRsi14', value)} />
+            <FilterInput label="Min 52W range" value={draftFilters.minWeek52RangePosition} placeholder="e.g. 55" onChange={(value) => updateFilter('minWeek52RangePosition', value)} />
+            <FilterInput label="Near 52W high" value={draftFilters.maxDistanceFromHigh52} placeholder="within %" onChange={(value) => updateFilter('maxDistanceFromHigh52', value)} />
+            <FilterInput label="Max PE" value={draftFilters.maxPeRatio} placeholder="e.g. 25" onChange={(value) => updateFilter('maxPeRatio', value)} />
+            <FilterInput label="Max P/B" value={draftFilters.maxPriceToBook} placeholder="e.g. 4" onChange={(value) => updateFilter('maxPriceToBook', value)} />
+            <FilterInput label="Min revenue growth" value={draftFilters.minRevenueGrowth} placeholder="e.g. 12" onChange={(value) => updateFilter('minRevenueGrowth', value)} />
+            <FilterInput label="Min profit margin" value={draftFilters.minProfitMargins} placeholder="e.g. 10" onChange={(value) => updateFilter('minProfitMargins', value)} />
+          </div>
+        </SectionCard>
       </div>
 
-      <SectionCard title="Screener Table" subtitle="Sortable analytics across price action, momentum, and fundamentals" icon={Filter}>
-        {loading ? (
-          <div className="stack-12">
-            {[...Array(8)].map((_, index) => <div key={index} className="skeleton" style={{ height: 46 }} />)}
-          </div>
-        ) : sortedRows.length ? (
-          <div style={{ overflowX: 'auto' }}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <SortHeader column="symbol" label="Symbol" />
-                  <SortHeader column="currentPrice" label="Price" />
-                  <SortHeader column="changePercent" label="Day %" />
-                  <SortHeader column="momentumScore" label="Momentum" />
-                  <SortHeader column="rsi14" label="RSI 14" />
-                  <SortHeader column="volumeRatio" label="Vol Ratio" />
-                  <SortHeader column="peRatio" label="PE" />
-                  <SortHeader column="priceToBook" label="P/B" />
-                  <SortHeader column="revenueGrowth" label="Revenue %" />
-                  <th>Trend</th>
-                  <th style={{ textAlign: 'center' }}>Research</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedRows.map((row) => (
-                  <tr key={row.symbol}>
-                    <td>
-                      <Link
-                        href={`/stocks/${encodeURIComponent(row.symbol)}`}
-                        onMouseEnter={() => setPreviewSymbol(row.symbol)}
-                        onFocus={() => setPreviewSymbol(row.symbol)}
-                        style={{ textDecoration: 'none', color: 'inherit' }}
-                      >
-                        <div className="mono" style={{ fontSize: 12, fontWeight: 700 }}>{row.symbol}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{row.name}</div>
-                      </Link>
-                    </td>
-                    <td><span className="mono">{formatCurrency(row.currentPrice)}</span></td>
-                    <td><span className="mono" style={{ color: row.changePercent >= 0 ? 'var(--green)' : 'var(--red)' }}>{formatPercent(row.changePercent)}</span></td>
-                    <td><span className="mono">{formatNumber(row.momentumScore)}</span></td>
-                    <td><span className="mono">{row.rsi14 !== undefined ? formatNumber(row.rsi14) : '—'}</span></td>
-                    <td><span className="mono">{row.volumeRatio !== undefined ? `${formatNumber(row.volumeRatio)}x` : '—'}</span></td>
-                    <td><span className="mono">{row.peRatio !== null && row.peRatio !== undefined ? formatNumber(row.peRatio) : '—'}</span></td>
-                    <td><span className="mono">{row.priceToBook !== null && row.priceToBook !== undefined ? formatNumber(row.priceToBook) : '—'}</span></td>
-                    <td><span className="mono">{row.revenueGrowth !== null && row.revenueGrowth !== undefined ? formatPercent(row.revenueGrowth) : '—'}</span></td>
-                    <td>
-                      <TrendBadge tone={row.trend === 'bullish' ? 'positive' : row.trend === 'bearish' ? 'negative' : 'warning'}>
-                        {row.trend || 'neutral'}
-                      </TrendBadge>
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
-                      <Link href={`/stocks/${encodeURIComponent(row.symbol)}`} className="btn btn-ghost" onMouseEnter={() => setPreviewSymbol(row.symbol)}>
-                        Open
-                        <ArrowUpRight style={{ width: 13, height: 13 }} />
-                      </Link>
-                    </td>
-                  </tr>
+      <div className="workbench-grid">
+        <SectionCard title="Screen Readout" subtitle="Why this screen is returning these names" icon={ShieldCheck} tone="primary">
+          {screen ? (
+            <div className="stack-16">
+              <div className="metric-footnote">{screen.narrative}</div>
+              <div className="grid-fit-180">
+                <MetricTile label="Universe in focus" value={screen.coverage.universeStocks} tone="primary" />
+                <MetricTile label="Sectors scanned" value={screen.coverage.sectorsScanned} tone="positive" />
+                <MetricTile label="Filtered out" value={screen.diagnostics.filteredOut} tone="warning" />
+                <MetricTile label="Matches" value={screen.coverage.matches} tone="negative" />
+              </div>
+
+              {screen.diagnostics.activeFilters.length ? (
+                <div className="opportunity-chip-row">
+                  {screen.diagnostics.activeFilters.map((entry) => (
+                    <span key={`${entry.label}-${entry.value}`} className="badge badge-muted">{entry.label}: {entry.value}</span>
+                  ))}
+                </div>
+              ) : null}
+
+              <div className="grid-fit-180">
+                <MetricTile label="PE coverage" value={`${screen.diagnostics.fieldCoverage.peRatio}%`} tone="primary" />
+                <MetricTile label="P/B coverage" value={`${screen.diagnostics.fieldCoverage.priceToBook}%`} tone="positive" />
+                <MetricTile label="Growth coverage" value={`${screen.diagnostics.fieldCoverage.revenueGrowth}%`} tone="warning" />
+                <MetricTile label="Margin coverage" value={`${screen.diagnostics.fieldCoverage.profitMargins}%`} tone="negative" />
+              </div>
+
+              <div className="stack-8">
+                {screen.diagnostics.notes.map((entry) => (
+                  <div key={entry} className="metric-footnote">{entry}</div>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <EmptyPanel title="No screener rows" description="Try a broader sector, clear the search term, or switch to a different preset." icon={Filter} />
-        )}
-      </SectionCard>
+              </div>
+            </div>
+          ) : (
+            <EmptyPanel title="Screener readout loading" description="The screen explanation will appear once the broader market sweep completes." icon={ShieldCheck} />
+          )}
+        </SectionCard>
+
+        <SectionCard title="Sector Match Board" subtitle="Where the current screen is finding qualified names" icon={Target}>
+          {screen?.sectorFocus.length ? (
+            <div className="panel-scroll-tight stack-12">
+              {screen.sectorFocus.map((entry) => (
+                <div key={entry.sector} className="list-card">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                    <div>
+                      <div className="stat-label">Sector</div>
+                      <div style={{ marginTop: 8, fontSize: 15, fontWeight: 700 }}>{entry.sector}</div>
+                    </div>
+                    <TrendBadge tone={entry.trend === 'bullish' ? 'positive' : entry.trend === 'bearish' ? 'negative' : 'warning'}>{entry.matchCount} matches</TrendBadge>
+                  </div>
+                  <div className="metric-footnote">Breadth {entry.breadth.toFixed(0)}% • Avg move {entry.averageChangePercent.toFixed(2)}% • Candidates {entry.candidateCount}</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyPanel title="Sector board unavailable" description="Sector match density will appear here once the screen has enough qualified names." icon={Target} />
+          )}
+        </SectionCard>
+      </div>
+
+      <div className="workbench-grid">
+        <SectionCard title="Qualified Results" subtitle="Broader discovery results with explicit research controls" icon={Sparkles}>
+          {loading && !screen ? (
+            <div className="compact-card-grid">
+              {[...Array(6)].map((_, index) => <div key={index} className="skeleton" style={{ height: 220 }} />)}
+            </div>
+          ) : screen?.opportunities.length ? (
+            <div className="panel-scroll">
+              <div className="compact-card-grid">
+                {screen.opportunities.map((opportunity, index) => (
+                  <OpportunityInsightCard key={`${opportunity.id}-${playbook}-${sortBy}`} opportunity={opportunity} rank={index + 1} compact />
+                ))}
+              </div>
+            </div>
+          ) : (
+            <EmptyPanel title="No ideas matched" description="The playbook and numeric filters are stricter than current market conditions. Loosen one threshold or change the sector focus." icon={Compass} />
+          )}
+        </SectionCard>
+      </div>
     </div>
   );
 }

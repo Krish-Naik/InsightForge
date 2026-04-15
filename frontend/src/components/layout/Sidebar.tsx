@@ -2,17 +2,18 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  Activity, BarChart3, Menu, Newspaper, Star, Wallet, X, Zap,
+  Activity, Compass, Menu, Newspaper, Star, TimerReset, Wallet, X, Zap,
 } from 'lucide-react';
 import { useState } from 'react';
 
 const NAV = [
-  { href: '/market', label: 'Command Center', icon: Activity, desc: 'Overview, movers, sectors, charts' },
-  { href: '/scanner', label: 'Momentum Scanner', icon: Zap, desc: 'Sector-first trend discovery' },
-  { href: '/screener', label: 'Fundamental Screener', icon: BarChart3, desc: 'Technical and valuation filters' },
-  { href: '/watchlist', label: 'Watchlists', icon: Star, desc: 'Curated live boards' },
-  { href: '/portfolio', label: 'Portfolio', icon: Wallet, desc: 'Allocation and P&L tracking' },
-  { href: '/news', label: 'News Desk', icon: Newspaper, desc: 'Curated market intelligence' },
+  { href: '/', label: 'Today', icon: Activity, desc: 'Live brief, top opportunities, sector flow' },
+  { href: '/scanner', label: 'Radar', icon: Zap, desc: 'Auto-detected setups and avoid lists' },
+  { href: '/screener', label: 'Guided Screener', icon: Compass, desc: 'Playbooks instead of filter mazes' },
+  { href: '/watchlist', label: 'Watchlist', icon: Star, desc: 'Names ranked by urgency and timing' },
+  { href: '/portfolio', label: 'Portfolio', icon: Wallet, desc: 'Conviction, exposure, and carry' },
+  { href: '/news', label: 'Story Feed', icon: Newspaper, desc: 'Why the market is behaving this way' },
+  { href: '/recap', label: 'Recap', icon: TimerReset, desc: 'What worked, what faded, what carries' },
 ];
 
 export function Sidebar() {
@@ -22,16 +23,16 @@ export function Sidebar() {
   const SidebarContent = () => (
     <aside className="nav-shell">
       <div className="nav-note stack-8">
-        <span className="page-kicker">Market Pipeline</span>
+        <span className="page-kicker">Decision Flow</span>
         <div style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6 }}>
-          Delayed Yahoo market data, TradingView charting, sector-first scanning, and cached news aggregation.
+          Start from what matters now, then expand into evidence only when the setup earns your attention.
         </div>
       </div>
 
-      <div className="nav-section-label">Workspace</div>
+      <div className="nav-section-label">Core</div>
       <nav className="stack-8" style={{ flex: 1 }}>
         {NAV.map(({ href, label, icon: Icon, desc }) => {
-          const active = pathname === href;
+          const active = href === '/' ? pathname === '/' : pathname === href;
           return (
             <Link
               key={href}
@@ -50,11 +51,11 @@ export function Sidebar() {
       </nav>
 
       <div className="nav-note stack-8">
-        <span className="nav-section-label" style={{ padding: 0 }}>Sources</span>
+        <span className="nav-section-label" style={{ padding: 0 }}>Stack</span>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          <span className="badge badge-primary">Yahoo Finance</span>
-          <span className="badge badge-sky">TradingView</span>
-          <span className="badge badge-amber">RSS Aggregation</span>
+          <span className="badge badge-primary">Delayed market feed</span>
+          <span className="badge badge-sky">Insight ranking</span>
+          <span className="badge badge-amber">Story intelligence</span>
         </div>
       </div>
     </aside>

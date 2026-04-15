@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
-import { Wifi, WifiOff } from 'lucide-react';
+import { ActivitySquare, Wifi, WifiOff } from 'lucide-react';
 import { marketAPI } from '@/lib/api';
 import { formatCurrency, formatPercent } from '@/lib/format';
 import { useMarketStream } from '@/lib/hooks/useMarketStream';
@@ -55,7 +55,7 @@ export function MarketTicker() {
     return (
       <div className="ticker-bar">
         <div className="ticker-inner">
-          <div className="topbar-pill">Preparing live market ribbon</div>
+          <div className="topbar-pill">Preparing market pulse ribbon</div>
           <div className="ticker-track" style={{ display: 'flex', gap: 10 }}>
         {[...Array(6)].map((_, i) => (
             <div key={i} className="skeleton" style={{ height: 36, width: 128 }} />
@@ -73,7 +73,12 @@ export function MarketTicker() {
       <div className="ticker-inner">
         <div className="topbar-pill" style={{ color: connected ? 'var(--green)' : 'var(--text-2)' }}>
           {connected ? <Wifi style={{ width: 12, height: 12 }} /> : <WifiOff style={{ width: 12, height: 12 }} />}
-          {connected ? 'Streaming indices' : 'Polling indices'}
+          {connected ? 'Pulse ribbon live' : 'Pulse ribbon polling'}
+        </div>
+
+        <div className="topbar-pill">
+          <ActivitySquare style={{ width: 12, height: 12, color: 'var(--primary)' }} />
+          Delayed public market data
         </div>
 
         <div className="ticker-track">

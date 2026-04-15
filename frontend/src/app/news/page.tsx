@@ -1,18 +1,8 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  ArrowUpRight,
-  BookText,
-  Newspaper,
-  RefreshCw,
-  Rss,
-  Sparkles,
-  TrendingDown,
-  TrendingUp,
-} from 'lucide-react';
-import { TVWidget } from '@/components/charts/TVWidget';
-import { SymbolLink } from '@/components/ui/SymbolLink';
+import { ArrowUpRight, BookText, BrainCircuit, Newspaper, RefreshCw, Rss, Sparkles, TrendingDown, TrendingUp } from 'lucide-react';
 import { EmptyPanel, MetricTile, PageHeader, SectionCard, TrendBadge } from '@/components/ui/page-kit';
 import { marketAPI, type NewsItem } from '@/lib/api';
 import { formatTimeAgo } from '@/lib/format';
@@ -28,26 +18,28 @@ const SENTIMENT_OPTIONS = [
 export default function NewsPage() {
   const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [category, setCategory] = useState('All');
   const [sentiment, setSentiment] = useState<(typeof SENTIMENT_OPTIONS)[number]['id']>('all');
 
   const loadNews = useCallback(async () => {
-    setLoading(true);
+    setRefreshing(true);
     try {
       const stories = await marketAPI.getNews(sentiment, category === 'All' ? undefined : category.toLowerCase(), 30);
       setNews(stories || []);
       setError(null);
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Failed to load news.');
+      setError(nextError instanceof Error ? nextError.message : 'Failed to load story feed.');
       setNews([]);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [category, sentiment]);
 
   useEffect(() => {
-    loadNews();
+    void loadNews();
   }, [loadNews]);
 
   const featured = news[0] || null;
@@ -66,49 +58,123 @@ export default function NewsPage() {
       }
     }
 
-    return [...counts.entries()]
-      .sort((left, right) => right[1] - left[1])
-      .slice(0, 8);
+    return [...counts.entries()].sort((left, right) => right[1] - left[1]).slice(0, 8);
   }, [news]);
+
+  const storyLead = featured
+    ? `${featured.category} is leading the conversation right now. ${featured.sentiment === 'bullish' ? 'The tone is constructive, but still needs market confirmation.' : featured.sentiment === 'bearish' ? 'The tone is risk-first, so reactions matter more than headlines.' : 'The tone is balanced, so focus on second-order impact instead of the headline alone.'}`
+    : 'Story Feed connects headlines to market behavior, not just article counts.';
 
   return (
     <div className="page">
       <PageHeader
-        kicker="News Desk"
-        title="Curated market intelligence"
-        description="A richer news desk driven by RSS aggregation, article categorization, sentiment tagging, and related-stock extraction. The feed is delayed and cached so news quality improves without creating unstable external call patterns."
+        kicker="Story Feed"
+        title="Narratives that can actually change behavior"
+        description="This is a compact market story desk. Use it to connect headlines to sectors, symbols, and the behavior they might change."
         actions={
-          <button onClick={loadNews} disabled={loading} className="btn btn-ghost">
-            <RefreshCw style={{ width: 14, height: 14 }} className={loading ? 'anim-spin' : ''} />
-            Refresh news
+          <button onClick={() => void loadNews()} disabled={refreshing} className="btn btn-ghost">
+            <RefreshCw style={{ width: 14, height: 14 }} className={refreshing ? 'anim-spin' : ''} />
+            Refresh feed
           </button>
         }
       />
 
       {error ? <TrendBadge tone="warning">{error}</TrendBadge> : null}
 
-      <div className="grid-fit-220">
-        <MetricTile label="Stories loaded" value={news.length} tone="primary" icon={Newspaper} subtext="Latest delayed cached feed slice" />
-        <MetricTile label="Bullish stories" value={sentimentStats.bullish} tone="positive" icon={TrendingUp} subtext="Positive market or corporate tone" />
-        <MetricTile label="Bearish stories" value={sentimentStats.bearish} tone="negative" icon={TrendingDown} subtext="Weakness, risk, or regulation pressure" />
-        <MetricTile label="Symbols in focus" value={symbolsInFocus.length} tone="warning" icon={Sparkles} subtext="Tickers repeated across the current feed" />
+      <div className="metric-strip-grid">
+        <MetricTile label="Stories" value={news.length} tone="primary" icon={Newspaper} subtext={storyLead} />
+        <MetricTile label="Bullish" value={sentimentStats.bullish} tone="positive" icon={TrendingUp} subtext="Constructive or positive tone" />
+        <MetricTile label="Bearish" value={sentimentStats.bearish} tone="negative" icon={TrendingDown} subtext="Risk-heavy or weak tone" />
+        <MetricTile label="Symbols in focus" value={symbolsInFocus.length} tone="warning" icon={Sparkles} subtext="Names repeated across stories" />
       </div>
 
-      <div className="two-column-layout">
-        <div className="stack-16">
-          <SectionCard title="Feed Filters" subtitle="Narrow the market intelligence desk by category or sentiment" icon={Rss}>
-            <div className="stack-16">
+      <div className="workbench-grid">
+        <div className="workbench-column">
+          <SectionCard title="Featured Narrative" subtitle="The one story most likely to frame the tape" icon={BookText} tone="primary">
+            {featured ? (
+              <div className="stack-16">
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <TrendBadge tone={featured.sentiment === 'bullish' ? 'positive' : featured.sentiment === 'bearish' ? 'negative' : 'warning'}>{featured.sentiment}</TrendBadge>
+                    <TrendBadge tone="primary">{featured.category}</TrendBadge>
+                  </div>
+                  <span className="topbar-pill">{featured.source} • {formatTimeAgo(featured.time)}</span>
+                </div>
+
+                <div>
+                  <h2 style={{ fontSize: '1.45rem', lineHeight: 1.2 }}>{featured.title}</h2>
+                  <p className="metric-footnote" style={{ marginTop: 12 }}>{featured.summary}</p>
+                </div>
+
+                <div className="opportunity-chip-row">
+                  {(featured.relatedStocks || []).map((symbol) => (
+                    <Link key={`${featured.id}-${symbol}`} href={`/stocks/${encodeURIComponent(symbol)}`} className="badge badge-muted" style={{ textDecoration: 'none' }}>
+                      {symbol}
+                    </Link>
+                  ))}
+                </div>
+
+                <a href={featured.url} target="_blank" rel="noreferrer" className="card-link">
+                  Open source article
+                  <ArrowUpRight style={{ width: 13, height: 13 }} />
+                </a>
+              </div>
+            ) : (
+              <EmptyPanel title="No featured story" description="Try a wider sentiment lens or refresh the feed once new stories arrive." icon={BookText} />
+            )}
+          </SectionCard>
+
+          <SectionCard title="Story Stream" subtitle="Scroll the narrative feed without leaving the workbench" icon={BrainCircuit}>
+            {loading ? (
+              <div className="story-stream">
+                {[...Array(5)].map((_, index) => <div key={index} className="skeleton" style={{ height: 92 }} />)}
+              </div>
+            ) : news.length ? (
+              <div className="story-stream">
+                {news.slice(1).map((item) => (
+                  <article key={item.id} className="recap-card">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <TrendBadge tone={item.sentiment === 'bullish' ? 'positive' : item.sentiment === 'bearish' ? 'negative' : 'warning'}>{item.sentiment}</TrendBadge>
+                        <TrendBadge tone="primary">{item.category}</TrendBadge>
+                      </div>
+                      <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{item.source} • {formatTimeAgo(item.time)}</span>
+                    </div>
+
+                    <h3 style={{ marginTop: 10, fontSize: 16, lineHeight: 1.35 }}>{item.title}</h3>
+                    <p className="recap-card-copy" style={{ marginTop: 8 }}>{item.summary}</p>
+
+                    <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <div className="opportunity-chip-row">
+                        {(item.relatedStocks || []).slice(0, 4).map((symbol) => (
+                          <Link key={`${item.id}-${symbol}`} href={`/stocks/${encodeURIComponent(symbol)}`} className="badge badge-muted" style={{ textDecoration: 'none' }}>
+                            {symbol}
+                          </Link>
+                        ))}
+                      </div>
+                      <a href={item.url} target="_blank" rel="noreferrer" className="card-link card-link-muted">
+                        Read source
+                        <ArrowUpRight style={{ width: 12, height: 12 }} />
+                      </a>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <EmptyPanel title="No stories loaded" description="The current feed settings returned no stories." icon={BrainCircuit} />
+            )}
+          </SectionCard>
+        </div>
+
+        <div className="workbench-column">
+          <SectionCard title="Feed Controls" subtitle="Shift the narrative lens without opening a large panel" icon={Rss}>
+            <div className="stack-12">
               <div>
                 <div className="stat-label" style={{ marginBottom: 8 }}>Sentiment</div>
                 <div className="tab-group">
-                  {SENTIMENT_OPTIONS.map((option) => (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => setSentiment(option.id)}
-                      className={`tab ${sentiment === option.id ? 'tab-active' : ''}`}
-                    >
-                      {option.label}
+                  {SENTIMENT_OPTIONS.map((entry) => (
+                    <button key={entry.id} type="button" onClick={() => setSentiment(entry.id)} className={`tab ${sentiment === entry.id ? 'tab-active' : ''}`}>
+                      {entry.label}
                     </button>
                   ))}
                 </div>
@@ -117,14 +183,9 @@ export default function NewsPage() {
               <div>
                 <div className="stat-label" style={{ marginBottom: 8 }}>Category</div>
                 <div className="tab-group">
-                  {CATEGORY_OPTIONS.map((option) => (
-                    <button
-                      key={option}
-                      type="button"
-                      onClick={() => setCategory(option)}
-                      className={`tab ${category === option ? 'tab-active' : ''}`}
-                    >
-                      {option}
+                  {CATEGORY_OPTIONS.map((entry) => (
+                    <button key={entry} type="button" onClick={() => setCategory(entry)} className={`tab ${category === entry ? 'tab-active' : ''}`}>
+                      {entry}
                     </button>
                   ))}
                 </div>
@@ -132,119 +193,40 @@ export default function NewsPage() {
             </div>
           </SectionCard>
 
-          <SectionCard title="Featured Story" subtitle="The most recent story in the current filtered feed" icon={BookText}>
-            {featured ? (
-              <div className="stack-16">
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <TrendBadge tone={featured.sentiment === 'bullish' ? 'positive' : featured.sentiment === 'bearish' ? 'negative' : 'warning'}>
-                      {featured.sentiment}
-                    </TrendBadge>
-                    <TrendBadge tone="primary">{featured.category}</TrendBadge>
-                  </div>
-                  <span className="topbar-pill">{featured.source} • {formatTimeAgo(featured.time)}</span>
-                </div>
-
-                <div>
-                  <h2 style={{ fontSize: '1.4rem', lineHeight: 1.3 }}>{featured.title}</h2>
-                  <p style={{ marginTop: 12, color: 'var(--text-2)', lineHeight: 1.8 }}>{featured.summary}</p>
-                </div>
-
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {(featured.relatedStocks || []).map((symbol) => (
-                    <SymbolLink key={symbol} symbol={symbol}>
-                      <span className="badge badge-muted">{symbol}</span>
-                    </SymbolLink>
-                  ))}
-                </div>
-
-                <a href={featured.url} target="_blank" rel="noreferrer" className="btn btn-primary" style={{ width: 'fit-content' }}>
-                  Open source article
-                  <ArrowUpRight style={{ width: 14, height: 14 }} />
-                </a>
-              </div>
-            ) : (
-              <EmptyPanel title="No stories in view" description="Try a different category or sentiment filter to repopulate the desk." icon={Newspaper} />
-            )}
-          </SectionCard>
-
-          <SectionCard title="Live Feed" subtitle="Recent headlines with related-stock drill-down" icon={Rss}>
-            {loading ? (
-              <div className="stack-12">
-                {[...Array(6)].map((_, index) => <div key={index} className="skeleton" style={{ height: 64 }} />)}
-              </div>
-            ) : news.length ? (
-              <div className="stack-16">
-                {news.slice(1).map((item) => (
-                  <article key={item.id} className="metric-card" style={{ padding: 16 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                        <TrendBadge tone={item.sentiment === 'bullish' ? 'positive' : item.sentiment === 'bearish' ? 'negative' : 'warning'}>
-                          {item.sentiment}
-                        </TrendBadge>
-                        <TrendBadge tone="primary">{item.category}</TrendBadge>
-                      </div>
-                      <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{item.source} • {formatTimeAgo(item.time)}</span>
-                    </div>
-
-                    <h3 style={{ marginTop: 12, fontSize: 16, lineHeight: 1.45 }}>{item.title}</h3>
-                    <p style={{ marginTop: 8, color: 'var(--text-2)', lineHeight: 1.75 }}>{item.summary}</p>
-
-                    <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                        {(item.relatedStocks || []).slice(0, 4).map((symbol) => (
-                          <SymbolLink key={symbol} symbol={symbol}>
-                            <span className="badge badge-muted">{symbol}</span>
-                          </SymbolLink>
-                        ))}
-                      </div>
-                      <a href={item.url} target="_blank" rel="noreferrer" className="btn btn-ghost">
-                        Read source
-                        <ArrowUpRight style={{ width: 13, height: 13 }} />
-                      </a>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <EmptyPanel title="No stories loaded" description="The current filter combination returned no articles." icon={Rss} />
-            )}
-          </SectionCard>
-        </div>
-
-        <div className="stack-16">
-          <SectionCard title="Symbols In Focus" subtitle="Tickers most frequently referenced across the current feed" icon={Sparkles}>
+          <SectionCard title="Symbols In Focus" subtitle="The names being repeated often enough to matter" icon={Sparkles}>
             {symbolsInFocus.length ? (
-              <div className="stack-12">
+              <div className="panel-scroll-tight stack-12">
                 {symbolsInFocus.map(([symbol, count]) => (
-                  <div key={symbol} className="metric-card" style={{ padding: 14 }}>
+                  <Link key={symbol} href={`/stocks/${encodeURIComponent(symbol)}`} className="list-card" style={{ textDecoration: 'none' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                      <SymbolLink symbol={symbol} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}>
-                        <div className="mono" style={{ fontSize: 12, fontWeight: 700 }}>{symbol}</div>
-                      </SymbolLink>
+                      <div>
+                        <div className="stat-label">In focus</div>
+                        <div style={{ marginTop: 8, fontSize: 16, fontWeight: 700 }}>{symbol}</div>
+                      </div>
                       <TrendBadge tone="primary">{count} mentions</TrendBadge>
                     </div>
-                  </div>
+                  </Link>
                 ))}
               </div>
             ) : (
-              <div className="metric-footnote">Related stocks appear here once articles start referencing listed symbols.</div>
+              <EmptyPanel title="No repeated symbols" description="Once stories cluster around the same names, the feed will surface them here." icon={Sparkles} />
             )}
           </SectionCard>
 
-          <SectionCard title="Timeline" subtitle="TradingView timeline for broader market context" icon={Newspaper}>
-            <div style={{ height: 420 }}>
-              <TVWidget
-                src="https://s3.tradingview.com/external-embedding/embed-widget-timeline.js"
-                config={{
-                  feedMode: 'market',
-                  market: 'stock',
-                  colorTheme: 'dark',
-                  isTransparent: true,
-                  displayMode: 'adaptive',
-                  locale: 'en',
-                }}
-              />
+          <SectionCard title="How To Read The Feed" subtitle="Story Feed is designed for impact, not headline consumption" icon={Rss}>
+            <div className="stack-12">
+              <div className="surface-inset">
+                <div className="stat-label">Read for impact</div>
+                <div className="metric-footnote" style={{ marginTop: 8 }}>A story matters only if it changes sector behavior, price participation, or trader attention.</div>
+              </div>
+              <div className="surface-inset">
+                <div className="stat-label">Map it to symbols</div>
+                <div className="metric-footnote" style={{ marginTop: 8 }}>Use repeated related stocks to decide whether the narrative is broadening or staying isolated.</div>
+              </div>
+              <div className="surface-inset">
+                <div className="stat-label">Respect tone, not hype</div>
+                <div className="metric-footnote" style={{ marginTop: 8 }}>Bullish news without market confirmation is still just potential. Bearish stories with real follow-through deserve more weight.</div>
+              </div>
             </div>
           </SectionCard>
         </div>

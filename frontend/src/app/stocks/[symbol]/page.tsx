@@ -2,81 +2,83 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, RefreshCw, ShieldCheck, TrendingDown, TrendingUp } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { ArrowLeft, BrainCircuit, RefreshCw, ShieldAlert, Sparkles, TrendingDown, TrendingUp, Waves } from 'lucide-react';
 import { HistoricalSeriesChart } from '@/components/charts/HistoricalSeriesChart';
+import { StoryTimeline } from '@/components/ui/insight-kit';
+import { SymbolLink } from '@/components/ui/SymbolLink';
 import { EmptyPanel, MetricTile, PageHeader, SectionCard, TrendBadge } from '@/components/ui/page-kit';
 import { marketAPI, type StockResearch } from '@/lib/api';
-import { formatCurrency, formatNumber, formatPercent } from '@/lib/format';
+import { formatCurrency, formatIST, formatNumber, formatPercent, formatTimeAgo } from '@/lib/format';
 
-const PERIODS = [
-  { id: '1y', label: '1Y' },
-  { id: '2y', label: '2Y' },
-  { id: '5y', label: '5Y' },
-  { id: '10y', label: '10Y' },
-] as const;
-
-export default function StockResearchPage() {
+export default function StockStoryPage() {
   const params = useParams<{ symbol: string }>();
   const symbol = decodeURIComponent(Array.isArray(params.symbol) ? params.symbol[0] : params.symbol || '').toUpperCase();
-  const [period, setPeriod] = useState<(typeof PERIODS)[number]['id']>('10y');
   const [research, setResearch] = useState<StockResearch | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [period, setPeriod] = useState<'1y' | '2y' | '5y' | '10y'>('2y');
 
   const loadResearch = useCallback(async () => {
     if (!symbol) return;
 
-    setLoading(true);
+    setRefreshing(true);
     try {
       const nextResearch = await marketAPI.getStockResearch(symbol);
       setResearch(nextResearch);
       setError(null);
     } catch (nextError) {
       setResearch(null);
-      setError(nextError instanceof Error ? nextError.message : 'Failed to load stock research.');
+      setError(nextError instanceof Error ? nextError.message : 'Failed to load stock story.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [symbol]);
 
   useEffect(() => {
-    loadResearch();
+    void loadResearch();
   }, [loadResearch]);
 
   const quote = research?.quote || null;
   const analytics = research?.analytics || null;
   const profile = research?.profile || null;
-  const peers = research?.peers || [];
   const sectorOverview = research?.sectorOverview || null;
-  const positive = (quote?.changePercent || 0) >= 0;
-
-  const valuationTiles = useMemo(() => {
-    return [
-      { label: 'PE Ratio', value: analytics?.peRatio != null ? formatNumber(analytics.peRatio) : '—', tone: 'warning' as const },
-      { label: 'P/B', value: analytics?.priceToBook != null ? formatNumber(analytics.priceToBook) : '—', tone: 'warning' as const },
-      { label: 'Dividend Yield', value: analytics?.dividendYield != null ? formatPercent(analytics.dividendYield) : '—', tone: 'positive' as const },
-      { label: 'Revenue Growth', value: analytics?.revenueGrowth != null ? formatPercent(analytics.revenueGrowth) : '—', tone: 'positive' as const },
-      { label: 'Profit Margins', value: analytics?.profitMargins != null ? formatPercent(analytics.profitMargins) : '—', tone: 'positive' as const },
-      { label: 'Beta', value: analytics?.beta != null ? formatNumber(analytics.beta) : '—', tone: 'primary' as const },
-    ];
-  }, [analytics]);
+  const peers = research?.peers || [];
+  const story = research?.story || null;
+  const positive = (quote?.changePercent || analytics?.changePercent || 0) >= 0;
+  const stanceTone = story?.stance === 'strong' || story?.stance === 'early'
+    ? 'positive'
+    : story?.stance === 'weak'
+      ? 'negative'
+      : story?.stance === 'extended'
+        ? 'warning'
+        : 'primary';
+  const stageTone = story?.setupMap.stage === 'ready' || story?.setupMap.stage === 'fresh'
+    ? 'positive'
+    : story?.setupMap.stage === 'extended'
+      ? 'warning'
+      : story?.setupMap.stage === 'weakening'
+        ? 'negative'
+        : 'primary';
 
   return (
     <div className="page">
       <PageHeader
-        kicker="Equity Research"
+        kicker="Stock Story"
         title={profile?.name || symbol}
-        description={profile?.narrative || 'Production-style research page with delayed cached market data, multi-year price structure, peer context, and valuation plus technical overlays.'}
+        description={story?.summary || profile?.narrative || 'Narrative-first research page built to explain the setup before drowning the user in indicators.'}
         actions={
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <Link href="/screener" className="btn btn-ghost">
+            {story?.generatedAt ? <span className="topbar-pill">Updated {formatTimeAgo(story.generatedAt)} • {formatIST(new Date(story.generatedAt))}</span> : null}
+            <Link href="/scanner" className="btn btn-ghost">
               <ArrowLeft style={{ width: 14, height: 14 }} />
-              Back to screener
+              Back to radar
             </Link>
-            <button onClick={loadResearch} disabled={loading} className="btn btn-primary">
-              <RefreshCw style={{ width: 14, height: 14 }} className={loading ? 'anim-spin' : ''} />
-              Refresh research
+            <button onClick={() => void loadResearch()} disabled={refreshing} className="btn btn-primary">
+              <RefreshCw style={{ width: 14, height: 14 }} className={refreshing ? 'anim-spin' : ''} />
+              Refresh story
             </button>
           </div>
         }
@@ -85,139 +87,224 @@ export default function StockResearchPage() {
       {error ? <TrendBadge tone="warning">{error}</TrendBadge> : null}
 
       {loading && !research ? (
-        <SectionCard title="Loading research" subtitle="Fetching the stock research workspace" icon={ShieldCheck}>
+        <SectionCard title="Loading stock story" subtitle="Building the narrative, setup map, and sector context" icon={BrainCircuit}>
           <div className="stack-12">
-            {[...Array(5)].map((_, index) => <div key={index} className="skeleton" style={{ height: 56 }} />)}
+            {[...Array(5)].map((_, index) => <div key={index} className="skeleton" style={{ height: 64 }} />)}
           </div>
         </SectionCard>
       ) : research && profile ? (
         <>
-          <div className="grid-fit-220">
-            <MetricTile label="Current price" value={quote ? formatCurrency(quote.price) : '—'} tone="primary" icon={ShieldCheck} subtext={profile.symbol} />
-            <MetricTile label="Day move" value={quote ? formatPercent(quote.changePercent) : '—'} tone={positive ? 'positive' : 'negative'} icon={positive ? TrendingUp : TrendingDown} subtext={quote ? `${quote.change >= 0 ? '+' : ''}${formatCurrency(quote.change)}` : 'No live quote'} />
-            <MetricTile label="Momentum score" value={analytics ? formatNumber(analytics.momentumScore) : '—'} tone={(analytics?.momentumScore || 0) >= 0 ? 'positive' : 'negative'} icon={positive ? TrendingUp : TrendingDown} subtext={analytics?.trend || 'neutral'} />
-            <MetricTile label="RSI 14" value={analytics?.rsi14 != null ? formatNumber(analytics.rsi14) : '—'} tone="warning" icon={ShieldCheck} subtext={analytics?.volumeRatio != null ? `Vol ratio ${formatNumber(analytics.volumeRatio)}x` : 'Volume ratio unavailable'} />
+          <div className="metric-strip-grid">
+            <MetricTile label="Current price" value={quote ? formatCurrency(quote.price) : '—'} tone="primary" icon={positive ? TrendingUp : TrendingDown} subtext={profile.symbol} />
+            <MetricTile label="Day move" value={quote ? formatPercent(quote.changePercent) : analytics ? formatPercent(analytics.changePercent) : '—'} tone={positive ? 'positive' : 'negative'} icon={positive ? TrendingUp : TrendingDown} subtext={quote ? `${quote.change >= 0 ? '+' : ''}${formatCurrency(quote.change)}` : 'Delayed quote snapshot'} />
+            <MetricTile label="Momentum score" value={analytics ? formatNumber(analytics.momentumScore) : '—'} tone="positive" icon={Sparkles} subtext={analytics?.trend || 'neutral'} />
+            <MetricTile label="Story confidence" value={story ? `${story.whyMoving.confidence}` : analytics?.rsi14 != null ? formatNumber(analytics.rsi14) : '—'} tone="warning" icon={BrainCircuit} subtext={analytics?.volumeRatio != null ? `Vol ${analytics.volumeRatio.toFixed(1)}x` : 'Volume ratio unavailable'} />
           </div>
 
-          <div className="two-column-layout">
-            <div className="stack-16">
-              <SectionCard title="Long-range line chart" subtitle="Use long windows here; intraday candlesticks remain available through the in-app chart modal elsewhere in the workspace" icon={TrendingUp}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <TrendBadge tone="primary">{profile.primarySector}</TrendBadge>
-                    {profile.inNifty50 ? <TrendBadge tone="positive">Nifty 50</TrendBadge> : null}
-                    {profile.industry ? <TrendBadge tone="warning">{profile.industry}</TrendBadge> : null}
+          <div className="workbench-grid">
+            <div className="workbench-column">
+              <SectionCard title="Why This Name Matters Now" subtitle="Interpretation first, then the proof behind it" icon={BrainCircuit} tone="primary">
+                {story ? (
+                  <div className="stack-16">
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <TrendBadge tone={stanceTone}>{story.stance}</TrendBadge>
+                      <TrendBadge tone="primary">{story.horizonFit}</TrendBadge>
+                      <TrendBadge tone={story.sourceMode === 'ai' ? 'primary' : 'warning'}>{story.sourceMode === 'ai' ? 'Groq story' : 'Rules story'}</TrendBadge>
+                      <TrendBadge tone="warning">{profile.primarySector}</TrendBadge>
+                    </div>
+
+                    <div className="surface-inset">
+                      <div className="stat-label">30-second brief</div>
+                      <div className="metric-footnote" style={{ marginTop: 10 }}>{story.summary}</div>
+                    </div>
+
+                    <div className="grid-fit-220">
+                      <div className="surface-inset">
+                        <div className="stat-label">Primary reason</div>
+                        <div className="metric-footnote" style={{ marginTop: 10 }}>{story.whyMoving.primary}</div>
+                      </div>
+                      <div className="surface-inset">
+                        <div className="stat-label">Secondary reason</div>
+                        <div className="metric-footnote" style={{ marginTop: 10 }}>{story.whyMoving.secondary}</div>
+                      </div>
+                    </div>
+
+                    <div className="surface-inset">
+                      <div className="stat-label">Evidence</div>
+                      <div className="stack-8" style={{ marginTop: 12 }}>
+                        {story.whyMoving.evidence.map((entry) => (
+                          <div key={entry} className="metric-footnote">{entry}</div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
+                ) : (
+                  <EmptyPanel title="Narrative unavailable" description="The stock story is waiting for enough context to explain the move cleanly." icon={BrainCircuit} />
+                )}
+              </SectionCard>
+
+              <SectionCard title="Price Structure" subtitle="Triggers, invalidation, and the chart in one compact frame" icon={Waves}>
+                {story ? (
+                  <div className="stack-16">
+                    <div className="grid-fit-180">
+                      <MetricTile label="Trigger" value={story.setupMap.trigger} tone="primary" />
+                      <MetricTile label="Invalidation" value={story.setupMap.invalidation} tone="negative" />
+                      <MetricTile label="Support" value={story.setupMap.support} tone="positive" />
+                      <MetricTile label="Resistance" value={story.setupMap.resistance} tone="warning" />
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <TrendBadge tone={stageTone}>{story.setupMap.stage}</TrendBadge>
+                    </div>
                   <div className="tab-group">
-                    {PERIODS.map((entry) => (
-                      <button key={entry.id} type="button" onClick={() => setPeriod(entry.id)} className={`tab ${period === entry.id ? 'tab-active' : ''}`}>
+                    {[
+                      { id: '1y', label: '1Y' },
+                      { id: '2y', label: '2Y' },
+                      { id: '5y', label: '5Y' },
+                      { id: '10y', label: '10Y' },
+                    ].map((entry) => (
+                      <button key={entry.id} type="button" onClick={() => setPeriod(entry.id as '1y' | '2y' | '5y' | '10y')} className={`tab ${period === entry.id ? 'tab-active' : ''}`}>
                         {entry.label}
                       </button>
                     ))}
                   </div>
+                  <HistoricalSeriesChart symbol={profile.symbol} period={period} variant="line" height={360} />
                 </div>
-                <HistoricalSeriesChart symbol={profile.symbol} period={period} variant="line" height={420} />
+                ) : (
+                  <EmptyPanel title="Setup map unavailable" description="Key levels will appear here once the stock story can classify the setup." icon={ShieldAlert} />
+                )}
               </SectionCard>
 
-              <SectionCard title="Technical structure" subtitle="Signals retail users rarely see organized together in one place" icon={ShieldCheck}>
-                <div className="grid-fit-180">
-                  <MetricTile label="52W range position" value={analytics ? `${formatNumber(analytics.week52RangePosition)}%` : '—'} tone="primary" />
-                  <MetricTile label="Distance from 52W high" value={analytics ? formatPercent(analytics.distanceFromHigh52) : '—'} tone="negative" />
-                  <MetricTile label="Distance from 52W low" value={analytics ? formatPercent(analytics.distanceFromLow52) : '—'} tone="positive" />
-                  <MetricTile label="Liquidity score" value={analytics ? formatNumber(analytics.liquidityScore) : '—'} tone="primary" />
-                  <MetricTile label="SMA 20" value={analytics?.sma20 != null ? formatCurrency(analytics.sma20) : '—'} tone="warning" />
-                  <MetricTile label="SMA 50" value={analytics?.sma50 != null ? formatCurrency(analytics.sma50) : '—'} tone="warning" />
-                </div>
-              </SectionCard>
-
-              <SectionCard title="Peer board" subtitle="Closest peer slice from the same tracked sector basket" icon={TrendingUp}>
-                {peers.length ? (
-                  <div style={{ overflowX: 'auto' }}>
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>Peer</th>
-                          <th style={{ textAlign: 'right' }}>Price</th>
-                          <th style={{ textAlign: 'right' }}>Day %</th>
-                          <th style={{ textAlign: 'right' }}>Momentum</th>
-                          <th style={{ textAlign: 'center' }}>Research</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {peers.map((peer) => (
-                          <tr key={peer.symbol}>
-                            <td>
-                              <div className="mono" style={{ fontSize: 12, fontWeight: 700 }}>{peer.symbol}</div>
-                              <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{peer.name}</div>
-                            </td>
-                            <td style={{ textAlign: 'right' }}><span className="mono">{formatCurrency(peer.currentPrice)}</span></td>
-                            <td style={{ textAlign: 'right' }}><span className="mono" style={{ color: peer.changePercent >= 0 ? 'var(--green)' : 'var(--red)' }}>{formatPercent(peer.changePercent)}</span></td>
-                            <td style={{ textAlign: 'right' }}><span className="mono">{formatNumber(peer.momentumScore)}</span></td>
-                            <td style={{ textAlign: 'center' }}>
-                              <Link href={`/stocks/${encodeURIComponent(peer.symbol)}`} className="btn btn-ghost">Open</Link>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+              <SectionCard title="Bull Vs Bear Case" subtitle="Useful setups need both conviction and invalidation" icon={Sparkles}>
+                {story ? (
+                  <div className="grid-fit-220">
+                    <div className="metric-card">
+                      <div className="stat-label">Bull case</div>
+                      <div className="stack-8" style={{ marginTop: 12 }}>
+                        {story.bullCase.map((entry) => <div key={entry} className="metric-footnote">{entry}</div>)}
+                      </div>
+                    </div>
+                    <div className="metric-card">
+                      <div className="stat-label">Bear case</div>
+                      <div className="stack-8" style={{ marginTop: 12 }}>
+                        {story.bearCase.map((entry) => <div key={entry} className="metric-footnote">{entry}</div>)}
+                      </div>
+                    </div>
                   </div>
                 ) : (
-                  <EmptyPanel title="No peer coverage" description="Peer analytics will appear once the sector basket has enough resolved constituents." icon={ShieldCheck} />
+                  <EmptyPanel title="Decision frame unavailable" description="Bull and bear framing appears once the stock story is generated." icon={Sparkles} />
                 )}
+              </SectionCard>
+
+              <SectionCard title="Sector And Peers" subtitle="Know whether the stock is leading, lagging, or leaning on the sector" icon={Waves}>
+                <div className="stack-16">
+                  {sectorOverview ? (
+                    <div className="grid-fit-180">
+                      <MetricTile label="Sector trend" value={sectorOverview.trend} tone={sectorOverview.trend === 'bullish' ? 'positive' : sectorOverview.trend === 'bearish' ? 'negative' : 'warning'} />
+                      <MetricTile label="Average move" value={formatPercent(sectorOverview.averageChangePercent)} tone={sectorOverview.averageChangePercent >= 0 ? 'positive' : 'negative'} />
+                      <MetricTile label="Breadth" value={`${sectorOverview.breadth.toFixed(0)}%`} tone="primary" />
+                      <MetricTile label="Tracked stocks" value={sectorOverview.stockCount} tone="warning" />
+                    </div>
+                  ) : null}
+
+                  {peers.length ? (
+                    <div className="compact-card-grid">
+                      {peers.slice(0, 6).map((peer) => (
+                        <Link key={peer.symbol} href={`/stocks/${encodeURIComponent(peer.symbol)}`} className="list-card" style={{ textDecoration: 'none' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                            <div>
+                              <div className="stat-label">Peer</div>
+                              <div style={{ marginTop: 8, fontSize: 16, fontWeight: 700 }}>{peer.symbol}</div>
+                              <div className="metric-footnote">{peer.name}</div>
+                            </div>
+                            <TrendBadge tone={peer.changePercent >= 0 ? 'positive' : 'negative'}>{formatPercent(peer.changePercent)}</TrendBadge>
+                          </div>
+                          <div className="opportunity-chip-row">
+                            <span className="badge badge-muted">Momentum {peer.momentumScore.toFixed(0)}</span>
+                            {peer.trend ? <span className="badge badge-primary">{peer.trend}</span> : null}
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyPanel title="Peer context unavailable" description="Peers appear once the sector basket has enough clean constituents." icon={Waves} />
+                  )}
+                </div>
               </SectionCard>
             </div>
 
-            <div className="stack-16">
-              <SectionCard title="Company profile" subtitle="Identity and market coverage details" icon={ShieldCheck}>
-                <div className="stack-12">
-                  <div className="metric-card">
-                    <div className="stat-label">Primary sector</div>
-                    <div className="metric-value">{profile.primarySector}</div>
-                    <div className="metric-footnote">{profile.exchange}{profile.isin ? ` • ISIN ${profile.isin}` : ''}</div>
-                  </div>
-                  <div className="metric-card">
-                    <div className="stat-label">Coverage notes</div>
-                    <div className="stack-8" style={{ marginTop: 10 }}>
-                      {profile.dataNotes.map((note) => (
-                        <div key={note} style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.7 }}>{note}</div>
-                      ))}
+            <div className="workbench-column panel-sticky">
+              <SectionCard title="Decision Map" subtitle="Everything needed for the next decision in one glance" icon={ShieldAlert} tone="warning">
+                {story ? (
+                  <div className="stack-16">
+                    <div className="grid-fit-180">
+                      <MetricTile label="Confidence" value={story.whyMoving.confidence} tone="warning" />
+                      <MetricTile label="Stance" value={story.stance} tone={stanceTone} />
+                      <MetricTile label="Horizon fit" value={story.horizonFit} tone="primary" />
+                      <MetricTile label="Stage" value={story.setupMap.stage} tone={stageTone} />
                     </div>
-                  </div>
-                  <div className="metric-card">
-                    <div className="stat-label">Aliases</div>
-                    <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      {profile.aliases.length ? profile.aliases.map((alias) => <span key={alias} className="badge badge-muted">{alias}</span>) : <span className="metric-footnote">No aliases available.</span>}
+
+                    <div className="surface-inset">
+                      <div className="stat-label">Watch next</div>
+                      <div className="metric-footnote" style={{ marginTop: 10 }}>{story.whyMoving.watchNext}</div>
                     </div>
-                  </div>
-                </div>
-              </SectionCard>
 
-              <SectionCard title="Valuation and quality" subtitle="Best-effort fundamentals from the legal public-data stack" icon={ShieldCheck}>
-                <div className="grid-fit-180">
-                  {valuationTiles.map((tile) => (
-                    <MetricTile key={tile.label} label={tile.label} value={tile.value} tone={tile.tone} />
-                  ))}
-                </div>
-              </SectionCard>
-
-              <SectionCard title="Sector context" subtitle="How the tracked sector is behaving right now" icon={ShieldCheck}>
-                {sectorOverview ? (
-                  <div className="grid-fit-180">
-                    <MetricTile label="Sector trend" value={sectorOverview.trend} tone={sectorOverview.trend === 'bullish' ? 'positive' : sectorOverview.trend === 'bearish' ? 'negative' : 'warning'} />
-                    <MetricTile label="Average move" value={formatPercent(sectorOverview.averageChangePercent)} tone={sectorOverview.averageChangePercent >= 0 ? 'positive' : 'negative'} />
-                    <MetricTile label="Breadth" value={`${sectorOverview.breadth.toFixed(0)}%`} tone="primary" />
-                    <MetricTile label="Tracked stocks" value={sectorOverview.stockCount} tone="primary" subtext={`${sectorOverview.sampleSize} currently sampled`} />
+                    <div className="surface-inset">
+                      <div className="stat-label">Main risk</div>
+                      <div className="metric-footnote" style={{ marginTop: 10 }}>{story.whyMoving.risk}</div>
+                    </div>
                   </div>
                 ) : (
-                  <EmptyPanel title="Sector context unavailable" description="Sector breadth is not available for this symbol yet." icon={ShieldCheck} />
+                  <EmptyPanel title="Decision map unavailable" description="The decision map will appear once the story engine finishes scoring the setup." icon={ShieldAlert} />
                 )}
+              </SectionCard>
+
+              <SectionCard title="Action Rail" subtitle="Keep the next action obvious and lightweight" icon={Sparkles}>
+                <div className="stack-12">
+                  <SymbolLink symbol={profile.symbol} className="btn btn-primary">Open chart</SymbolLink>
+                  <Link href="/watchlist" className="btn btn-ghost">Track in watchlist</Link>
+                  <Link href="/news" className="btn btn-ghost">Check story feed</Link>
+                </div>
+              </SectionCard>
+
+              <SectionCard title="Narrative Timeline" subtitle="Context over time, not just a static snapshot" icon={BrainCircuit}>
+                {story ? (
+                  <div className="panel-scroll-tight">
+                    <StoryTimeline items={story.timeline} />
+                  </div>
+                ) : (
+                  <EmptyPanel title="Timeline unavailable" description="The story timeline will appear once the narrative engine has enough context." icon={BrainCircuit} />
+                )}
+              </SectionCard>
+
+              <SectionCard title="Company Context" subtitle="Identity, coverage, and the practical limits of the data stack" icon={ShieldAlert}>
+                <div className="stack-12">
+                  <div className="surface-inset">
+                    <div className="stat-label">Coverage</div>
+                    <div className="metric-value">{profile.primarySector}</div>
+                    <div className="metric-footnote">{profile.exchange}{profile.industry ? ` • ${profile.industry}` : ''}{profile.inNifty50 ? ' • Nifty 50' : ''}</div>
+                  </div>
+
+                  <div className="surface-inset">
+                    <div className="stat-label">Aliases</div>
+                    <div className="opportunity-chip-row" style={{ marginTop: 12 }}>
+                      {profile.aliases.length ? profile.aliases.map((entry) => <span key={entry} className="badge badge-muted">{entry}</span>) : <span className="metric-footnote">No aliases recorded.</span>}
+                    </div>
+                  </div>
+
+                  <div className="surface-inset">
+                    <div className="stat-label">Data notes</div>
+                    <div className="stack-8" style={{ marginTop: 12 }}>
+                      {profile.dataNotes.map((entry) => <div key={entry} className="metric-footnote">{entry}</div>)}
+                    </div>
+                  </div>
+                </div>
               </SectionCard>
             </div>
           </div>
         </>
       ) : (
-        <SectionCard title="Research unavailable" subtitle="No profile was returned for the selected symbol" icon={ShieldCheck}>
-          <EmptyPanel title="No research data" description="Try another symbol from the screener or scanner. The symbol may not have resolved cleanly into the exchange metadata universe yet." icon={ShieldCheck} />
+        <SectionCard title="Stock story unavailable" subtitle="The symbol could not be resolved into a clean research profile" icon={BrainCircuit}>
+          <EmptyPanel title="No stock story" description="Try another symbol from Radar or Guided Screener. The current symbol may not have enough clean market metadata yet." icon={BrainCircuit} />
         </SectionCard>
       )}
     </div>

@@ -310,9 +310,9 @@ export default function WatchlistPage() {
   return (
     <div className="page">
       <PageHeader
-        kicker="Watchlists"
-        title={activeList?.name || 'Watchlists'}
-        description="Build focused boards for leaders, sectors, or event-driven setups. Quotes stay delayed and batched so even multiple boards do not overwhelm the public data pipeline."
+        kicker="Watchlist"
+        title={activeList?.name || 'Watchlist Priorities'}
+        description="Use watchlists as ranked attention boards, not dumping grounds. The goal is to keep a short set of names close to their next meaningful decision point."
         actions={
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             {lastUpdated ? <span className="topbar-pill">Updated {formatIST(lastUpdated)}</span> : null}
@@ -331,7 +331,7 @@ export default function WatchlistPage() {
         }
       />
 
-      <div className="grid-fit-220">
+      <div className="metric-strip-grid">
         <MetricTile label="Tracked symbols" value={activeList?.stocks?.length || 0} tone="primary" icon={Star} subtext="Symbols on the active board" />
         <MetricTile label="Advancers" value={advancers} tone="positive" icon={TrendingUp} subtext="Positive day movers in the board" />
         <MetricTile label="Decliners" value={decliners} tone="negative" icon={TrendingDown} subtext="Negative day movers in the board" />
@@ -344,14 +344,21 @@ export default function WatchlistPage() {
         </div>
       ) : null}
 
-      <div className="two-column-layout">
-        <div className="stack-16">
+      <div className="workbench-grid">
+        <div className="workbench-column">
           <SectionCard title="Boards" subtitle="Curate multiple watchlists for different setups" icon={FolderPlus}>
-            <div className="stack-12">
+            <div className="panel-scroll-tight stack-12">
               {lists.map((list) => {
                 const active = activeList?.id === list.id;
                 return (
-                  <div key={list.id} className="metric-card" style={{ padding: 14, borderColor: active ? 'rgba(77, 199, 255, 0.34)' : undefined }}>
+                  <div
+                    key={list.id}
+                    className="list-card"
+                    style={{
+                      borderColor: active ? 'rgba(217, 154, 79, 0.34)' : undefined,
+                      background: active ? 'linear-gradient(135deg, rgba(217, 154, 79, 0.16), rgba(255,248,236,0.03))' : undefined,
+                    }}
+                  >
                     {editingId === list.id ? (
                       <div className="stack-8">
                         <input value={draftName} onChange={(event) => setDraftName(event.target.value)} className="input" />
@@ -409,7 +416,7 @@ export default function WatchlistPage() {
                     <input value={search} onChange={(event) => setSearch(event.target.value)} className="input" style={{ paddingLeft: 38 }} placeholder="Search symbol or company" />
                   </div>
                   {searchResults.length ? searchResults.map((result) => (
-                    <button key={result.symbol} type="button" onClick={() => addSymbol(result)} className="metric-card" style={{ padding: 14, cursor: 'pointer', textAlign: 'left' }}>
+                    <button key={result.symbol} type="button" onClick={() => addSymbol(result)} className="list-card" style={{ cursor: 'pointer', textAlign: 'left' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
                         <div>
                           <div className="mono" style={{ fontSize: 12, fontWeight: 700 }}>{result.symbol}</div>
@@ -425,51 +432,53 @@ export default function WatchlistPage() {
           </SectionCard>
         </div>
 
-        <SectionCard title="Live Board" subtitle="Delayed quote board with fast chart drill-down and board cleanup" icon={Star}>
-          {activeList?.stocks?.length ? (
-            <div style={{ overflowX: 'auto' }}>
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Symbol</th>
-                    <th style={{ textAlign: 'right' }}>Price</th>
-                    <th style={{ textAlign: 'right' }}>Day %</th>
-                    <th style={{ textAlign: 'right' }}>Volume</th>
-                    <th style={{ textAlign: 'right' }}>Range</th>
-                    <th style={{ textAlign: 'center' }}>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {activeList.stocks.map((stock: { symbol: string; name: string; exchange: string }) => {
-                    const quote = quotes[stock.symbol];
-                    return (
-                      <tr key={stock.symbol}>
-                        <td>
-                          <SymbolLink symbol={stock.symbol} exchange={stock.exchange} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}>
-                            <div className="mono" style={{ fontSize: 12, fontWeight: 700 }}>{stock.symbol}</div>
-                            <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{stock.name}</div>
-                          </SymbolLink>
-                        </td>
-                        <td style={{ textAlign: 'right' }}><span className="mono">{quote ? formatCurrency(quote.price) : '—'}</span></td>
-                        <td style={{ textAlign: 'right' }}><span className="mono" style={{ color: (quote?.changePercent || 0) >= 0 ? 'var(--green)' : 'var(--red)' }}>{quote ? formatPercent(quote.changePercent) : '—'}</span></td>
-                        <td style={{ textAlign: 'right' }}><span className="mono">{quote?.volume ? formatLargeNumber(quote.volume) : '—'}</span></td>
-                        <td style={{ textAlign: 'right' }}><span className="mono">{quote ? `${formatCurrency(quote.dayLow)} - ${formatCurrency(quote.dayHigh)}` : '—'}</span></td>
-                        <td style={{ textAlign: 'center' }}>
-                          <button onClick={() => removeSymbol(stock.symbol)} className="btn btn-danger">
-                            <Trash2 style={{ width: 13, height: 13 }} />
-                            Remove
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <EmptyPanel title="Watchlist is empty" description="Add a few symbols to start tracking a focused market board." icon={Star} />
-          )}
-        </SectionCard>
+        <div className="workbench-column">
+          <SectionCard title="Live Board" subtitle="Delayed quote board with fast chart drill-down and board cleanup" icon={Star}>
+            {activeList?.stocks?.length ? (
+              <div style={{ overflowX: 'auto' }}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Symbol</th>
+                      <th style={{ textAlign: 'right' }}>Price</th>
+                      <th style={{ textAlign: 'right' }}>Day %</th>
+                      <th style={{ textAlign: 'right' }}>Volume</th>
+                      <th style={{ textAlign: 'right' }}>Range</th>
+                      <th style={{ textAlign: 'center' }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activeList.stocks.map((stock: { symbol: string; name: string; exchange: string }) => {
+                      const quote = quotes[stock.symbol];
+                      return (
+                        <tr key={stock.symbol}>
+                          <td>
+                            <SymbolLink symbol={stock.symbol} exchange={stock.exchange} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}>
+                              <div className="mono" style={{ fontSize: 12, fontWeight: 700 }}>{stock.symbol}</div>
+                              <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{stock.name}</div>
+                            </SymbolLink>
+                          </td>
+                          <td style={{ textAlign: 'right' }}><span className="mono">{quote ? formatCurrency(quote.price) : '—'}</span></td>
+                          <td style={{ textAlign: 'right' }}><span className="mono" style={{ color: (quote?.changePercent || 0) >= 0 ? 'var(--green)' : 'var(--red)' }}>{quote ? formatPercent(quote.changePercent) : '—'}</span></td>
+                          <td style={{ textAlign: 'right' }}><span className="mono">{quote?.volume ? formatLargeNumber(quote.volume) : '—'}</span></td>
+                          <td style={{ textAlign: 'right' }}><span className="mono">{quote ? `${formatCurrency(quote.dayLow)} - ${formatCurrency(quote.dayHigh)}` : '—'}</span></td>
+                          <td style={{ textAlign: 'center' }}>
+                            <button onClick={() => removeSymbol(stock.symbol)} className="btn btn-danger">
+                              <Trash2 style={{ width: 13, height: 13 }} />
+                              Remove
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyPanel title="Watchlist is empty" description="Add a few symbols to start tracking a focused market board." icon={Star} />
+            )}
+          </SectionCard>
+        </div>
       </div>
     </div>
   );

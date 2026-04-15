@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { MarketDataService } from '../services/marketDataService.js';
 import { NewsService }         from '../services/news.js';
+import { MarketInsightsService } from '../services/marketInsightsService.js';
 import { asyncHandler, AppError } from '../utils/helpers.js';
 import {
   getPublicMarketCatalog,
@@ -25,6 +26,12 @@ export const marketController = {
   getMarketSummary: asyncHandler(async (_req: Request, res: Response) => {
     setCacheHeaders(res, 20);
     const data = await MarketDataService.getMarketSummary();
+    res.json({ success: true, data, timestamp: new Date().toISOString() });
+  }),
+
+  getTodayDesk: asyncHandler(async (_req: Request, res: Response) => {
+    setCacheHeaders(res, 30, 90);
+    const data = await MarketInsightsService.getTodayDesk();
     res.json({ success: true, data, timestamp: new Date().toISOString() });
   }),
 
@@ -104,6 +111,60 @@ export const marketController = {
     res.json({ success: true, data, timestamp: new Date().toISOString() });
   }),
 
+  getOpportunityRadar: asyncHandler(async (req: Request, res: Response) => {
+    setCacheHeaders(res, 45, 120);
+    const { mode = 'momentum', horizon = 'intraday', selectivity = 'balanced' } = req.query;
+    const data = await MarketInsightsService.getOpportunityRadar(
+      mode as 'momentum' | 'breakout' | 'pullback' | 'avoid' | 'sympathy' | 'guided',
+      horizon as 'intraday' | 'swing',
+      selectivity as 'conservative' | 'balanced' | 'aggressive',
+    );
+    res.json({ success: true, data, timestamp: new Date().toISOString() });
+  }),
+
+  getGuidedScreener: asyncHandler(async (req: Request, res: Response) => {
+    setCacheHeaders(res, 60, 150);
+    const {
+      playbook = 'leadership',
+      horizon = 'swing',
+      selectivity = 'balanced',
+      sortBy = 'score',
+      sector = 'all',
+      minPrice,
+      maxPrice,
+      minMomentumScore,
+      minVolumeRatio,
+      maxRsi14,
+      minWeek52RangePosition,
+      maxDistanceFromHigh52,
+      maxPeRatio,
+      maxPriceToBook,
+      minRevenueGrowth,
+      minProfitMargins,
+    } = req.query;
+    const data = await MarketInsightsService.getGuidedScreener(
+      playbook as 'leadership' | 'quality' | 'pullback' | 'sympathy' | 'avoid',
+      horizon as 'intraday' | 'swing',
+      selectivity as 'conservative' | 'balanced' | 'aggressive',
+      sortBy as 'score' | 'momentum' | 'volume' | 'breakout' | 'sector' | 'value',
+      sector as string,
+      {
+        minPrice,
+        maxPrice,
+        minMomentumScore,
+        minVolumeRatio,
+        maxRsi14,
+        minWeek52RangePosition,
+        maxDistanceFromHigh52,
+        maxPeRatio,
+        maxPriceToBook,
+        minRevenueGrowth,
+        minProfitMargins,
+      },
+    );
+    res.json({ success: true, data, timestamp: new Date().toISOString() });
+  }),
+
   getFundamentals: asyncHandler(async (req: Request, res: Response) => {
     setCacheHeaders(res, 300, 600);
     const { symbols } = req.query;
@@ -128,8 +189,20 @@ export const marketController = {
   getStockResearch: asyncHandler(async (req: Request, res: Response) => {
     setCacheHeaders(res, 300, 900);
     const { symbol } = req.params;
-    const data = await MarketDataService.getStockResearch(symbol);
+    const [research, story] = await Promise.all([
+      MarketDataService.getStockResearch(symbol),
+      MarketInsightsService.getStockStory(symbol),
+    ]);
+    const data = research ? { ...research, story } : null;
     if (!data) throw new AppError('Symbol not found or no research data available', 404);
+    res.json({ success: true, data, timestamp: new Date().toISOString() });
+  }),
+
+  getStockStory: asyncHandler(async (req: Request, res: Response) => {
+    setCacheHeaders(res, 180, 600);
+    const { symbol } = req.params;
+    const data = await MarketInsightsService.getStockStory(symbol);
+    if (!data) throw new AppError('Stock story unavailable for the selected symbol', 404);
     res.json({ success: true, data, timestamp: new Date().toISOString() });
   }),
 
