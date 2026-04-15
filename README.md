@@ -1,4 +1,4 @@
-# StockPulse — Indian Market Terminal
+# InsightForge — Indian Market Terminal
 
 Delayed and cached NSE/BSE stock market terminal built with **Next.js 15**, **Express**, **TypeScript**, and **TradingView Widgets**.
 
@@ -7,7 +7,7 @@ Delayed and cached NSE/BSE stock market terminal built with **Next.js 15**, **Ex
 ## Project Structure
 
 ```
-StockPulse/
+InsightForge/
 ├── frontend/               # Next.js 15 + TypeScript
 │   ├── src/
 │   │   ├── app/            # App Router pages

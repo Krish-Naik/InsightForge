@@ -11,10 +11,10 @@ export function Header() {
       <div className="topbar-inner">
         <Link href="/" className="brand-lockup">
           <span className="brand-mark">
-            <TrendingUp style={{ width: 20, height: 20, color: 'var(--primary)' }} />
+            <TrendingUp style={{ width: 18, height: 18, color: 'var(--text-1)' }} />
           </span>
           <span>
-            <span className="brand-title">StockPulse</span>
+            <span className="brand-title">InsightForge</span>
             <span className="brand-subtitle">Decision companion for Indian traders</span>
           </span>
         </Link>
@@ -22,19 +22,19 @@ export function Header() {
         <div className="topbar-meta">
           <span className="topbar-pill">
             <span className={`status-dot ${connected ? 'is-live' : ''}`} />
-            {connected ? 'Live market pulse' : 'Delayed cache mode'}
+            {connected ? 'Live data' : 'Cached mode'}
           </span>
           <span className="topbar-pill">
-            <Waves style={{ width: 13, height: 13, color: 'var(--primary)' }} />
-            Ranked market brief
+            <Waves style={{ width: 12, height: 12, color: 'var(--text-2)' }} />
+            Ranked brief
           </span>
           <span className="topbar-pill">
-            <BrainCircuit style={{ width: 13, height: 13, color: 'var(--amber)' }} />
-            AI-ready explanations
+            <BrainCircuit style={{ width: 12, height: 12, color: 'var(--text-2)' }} />
+            AI insights
           </span>
           <span className="topbar-pill">
-            <Sparkles style={{ width: 13, height: 13, color: 'var(--primary-2)' }} />
-            Cached for public feed safety
+            <Sparkles style={{ width: 12, height: 12, color: 'var(--text-2)' }} />
+            Cached feed
           </span>
         </div>
       </div>

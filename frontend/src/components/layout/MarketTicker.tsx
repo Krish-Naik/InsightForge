@@ -55,10 +55,10 @@ export function MarketTicker() {
     return (
       <div className="ticker-bar">
         <div className="ticker-inner">
-          <div className="topbar-pill">Preparing market pulse ribbon</div>
+          <div className="topbar-pill">Loading market data</div>
           <div className="ticker-track" style={{ display: 'flex', gap: 10 }}>
         {[...Array(6)].map((_, i) => (
-            <div key={i} className="skeleton" style={{ height: 36, width: 128 }} />
+            <div key={i} className="skeleton" style={{ height: 32, width: 120 }} />
         ))}
           </div>
         </div>
@@ -73,12 +73,12 @@ export function MarketTicker() {
       <div className="ticker-inner">
         <div className="topbar-pill" style={{ color: connected ? 'var(--green)' : 'var(--text-2)' }}>
           {connected ? <Wifi style={{ width: 12, height: 12 }} /> : <WifiOff style={{ width: 12, height: 12 }} />}
-          {connected ? 'Pulse ribbon live' : 'Pulse ribbon polling'}
+          {connected ? 'Live' : 'Polling'}
         </div>
 
         <div className="topbar-pill">
-          <ActivitySquare style={{ width: 12, height: 12, color: 'var(--primary)' }} />
-          Delayed public market data
+          <ActivitySquare style={{ width: 12, height: 12, color: 'var(--text-2)' }} />
+          Delayed data
         </div>
 
         <div className="ticker-track">
@@ -87,13 +87,13 @@ export function MarketTicker() {
             const up = item.changePercent >= 0;
             return (
               <div key={`${item.symbol}-${i}`} className="ticker-chip">
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-2)' }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>
                   {item.shortName}
                 </span>
-                <span className="mono" style={{ fontWeight: 700, color: 'var(--text-1)' }}>
+                <span className="mono" style={{ fontWeight: 600, color: 'var(--text-1)' }}>
                   {item.price > 0 ? formatCurrency(item.price).replace('₹', '') : '—'}
                 </span>
-                <span className="mono" style={{ fontWeight: 700, color: up ? 'var(--green)' : 'var(--red)' }}>
+                <span className="mono" style={{ fontWeight: 600, color: up ? 'var(--green)' : 'var(--red)' }}>
                   {item.price > 0 ? formatPercent(item.changePercent) : '—'}
                 </span>
               </div>

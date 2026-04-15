@@ -14,6 +14,16 @@ const UNIVERSE_TTL_MS = 12 * 60 * 60 * 1000;
 const NON_EQUITY_NAME_PATTERN = /(TBILL|T-BILL|SDL|GSEC|GOVT|GOVERNMENT|BOND|NCD|DEBENTURE|ETF|REIT|INVIT|MUTUAL FUND|LIQUIDBEES|GOLDBEES|SILVERBEES)/i;
 const EXCLUDED_BSE_TYPES = new Set(['F']);
 
+const NSE_INDICES = ['^NSEI', '^BSESN', '^NIFTYIT', '^NIFTYBANK', '^NIFTYAUTO', '^NIFTYPHARMA', '^NIFTYFMCG', '^NIFTYMETAL', '^NIFTYENERGY'];
+
+const NIFTY_50_SYMBOLS = [
+  'RELIANCE', 'TCS', 'HDFCBANK', 'ICICIBANK', 'INFY', 'SBIN', 'BHARTIARTL', 'ITC', 'LTCG', 'HINDUNILVR',
+  'TITAN', 'BAJFINANCE', 'SUNPHARMA', 'ULTRACEMCO', 'MARUTI', 'TATASTEEL', 'POWERGRID', 'NTPC', 'JSWSTEEL', 'KOTAKBANK',
+  'ONGC', 'ADANIGREEN', 'COALINDIA', 'HDFCLIFE', 'SBILIFE', 'BPCL', 'CIPLA', 'DRREDDY', 'TECHM', 'GRASIM',
+  'TATA CONSUM', 'DIVISLAB', 'SHREECEM', 'ADANIPORTS', 'VEDL', 'EASEMYTRIP', 'AWL', 'SIEMENS', 'ATGL', 'HAL',
+  'COLPAL', 'HINDZINC', 'GAIL', 'IDBI', 'DLF', 'ICICIGI', 'M&M', 'ADANITRANS', 'BANDHANBNK', 'LIC'
+];
+
 export interface UniverseStock {
   symbol: string;
   name: string;
@@ -492,6 +502,15 @@ export class MarketUniverseService {
       loading: Boolean(cache.inflight),
       lastUpdatedAt: cache.fetchedAt ? new Date(cache.fetchedAt).toISOString() : null,
     };
+  }
+
+  static getStockSymbols(): string[] {
+    if (!cache.data.length) return NIFTY_50_SYMBOLS;
+    return cache.data.map(stock => stock.symbol);
+  }
+
+  static getIndexSymbols(): string[] {
+    return NSE_INDICES;
   }
 
   static async getSummary() {

@@ -1,8 +1,8 @@
-# StockPulse Market Intelligence Architecture
+# InsightForge Market Intelligence Architecture
 
 ## Goal
 
-Turn StockPulse from a request-time market dashboard into a market intelligence platform that can continuously scan a broad NSE universe, precompute signals, and serve distinct outputs for:
+Turn InsightForge from a request-time market dashboard into a market intelligence platform that can continuously scan a broad NSE universe, precompute signals, and serve distinct outputs for:
 
 - Today: market overview and narrative
 - Radar: live discovery and signal feed
@@ -665,7 +665,7 @@ That gives the app a real path to broad-market scanning without making page load
 
 ## Bottom Line
 
-To analyze around 1500 NSE stocks reliably, StockPulse needs one shared market intelligence pipeline.
+To analyze around 1500 NSE stocks reliably, InsightForge needs one shared market intelligence pipeline.
 
 That pipeline should:
 

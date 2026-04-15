@@ -9,16 +9,22 @@ import { logger }    from './utils/logger.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
 import { MarketDataService } from './services/marketDataService.js';
 import { MarketUniverseService } from './services/marketUniverseService.js';
+import { initRedis, redisClient } from './services/redisService.js';
+import { startBatchWorker, stopBatchWorker } from './services/batchWorker.js';
 
 import authRoutes      from './routes/auth.js';
 import watchlistRoutes from './routes/watchlist.js';
 import portfolioRoutes from './routes/portfolio.js';
 import marketRoutes    from './routes/market.js';
+import cacheRoutes     from './routes/cache.js';
 
 const app: Express = express();
 
 // ── Database ─────────────────────────────────────────────────────────────────
 await connectDB();
+
+// ── Redis ────────────────────────────────────────────────────────────────────
+await initRedis();
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 app.use(helmet({ contentSecurityPolicy: false }));
@@ -39,6 +45,7 @@ app.use(config.isDev ? morgan('dev') : morgan('combined', {
 app.get('/api/health', (_req: Request, res: Response) => {
   const providers = MarketDataService.getProviderHealth();
   const universe = MarketUniverseService.getStatus();
+  const redisHealth = redisClient.healthCheck();
   const degraded = !isDbConnected() || Boolean(providers.yahoo.lastAttemptAt && !providers.yahoo.ok);
 
   res.json({
@@ -48,6 +55,7 @@ app.get('/api/health', (_req: Request, res: Response) => {
     environment: config.nodeEnv,
     services: {
       database: { connected: isDbConnected() },
+      redis: { connected: redisHealth.connected, latencyMs: redisHealth.latencyMs },
       providers: {
         yahoo: {
           ...providers.yahoo,
@@ -151,6 +159,10 @@ app.use('/api/auth',       authRoutes);
 app.use('/api/watchlists', watchlistRoutes);
 app.use('/api/portfolios', portfolioRoutes);
 app.use('/api/market',     marketRoutes);
+app.use('/api/cache',      cacheRoutes);
+
+// ── Batch worker ────────────────────────────────────────────────────────────
+startBatchWorker(60_000);
 
 // ── Error handling ────────────────────────────────────────────────────────────
 app.use(notFound);
@@ -166,14 +178,16 @@ const server = app.listen(PORT, () => {
 function gracefulShutdown(signal: string) {
   logger.info(`${signal} received — shutting down gracefully`);
   clearInterval(marketWarmTimer);
+  stopBatchWorker();
   for (const client of clients) {
     try { client.res.end(); } catch { /* ignore */ }
   }
-  server.close(() => {
+  server.close(async () => {
     logger.info('HTTP server closed');
+    await redisClient.disconnect();
+    logger.info('Redis disconnected');
     process.exit(0);
   });
-  // Force exit after 10 s
   setTimeout(() => process.exit(1), 10_000);
 }
 

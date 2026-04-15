@@ -124,7 +124,7 @@ const http = axios.create({
   timeout: HTTP_TIMEOUT_MS,
   headers: {
     Accept: 'application/json',
-    'User-Agent': 'Mozilla/5.0 StockPulse/2.0',
+    'User-Agent': 'Mozilla/5.0 InsightForge/2.0',
   },
 });
 
@@ -558,6 +558,13 @@ export class YahooFinanceService {
   static async getQuote(symbol: string): Promise<Quote | null> {
     const [quote] = await this.getQuotes([symbol]);
     return quote?.price ? quote : null;
+  }
+
+  static async getIndex(symbol: string): Promise<Index | null> {
+    const [index] = await this.getIndices();
+    const indices = await this.getIndices();
+    const found = indices.find(idx => idx.symbol === symbol || idx.symbol.includes(symbol));
+    return found || null;
   }
 
   static async getQuotes(symbols: string[]): Promise<Quote[]> {

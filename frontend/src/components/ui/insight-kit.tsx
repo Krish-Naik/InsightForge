@@ -57,7 +57,7 @@ export function OpportunityInsightCard({
       </div>
 
       <div className="opportunity-context">
-        <Icon style={{ width: 16, height: 16, color: 'var(--primary)' }} />
+        <Icon style={{ width: 16, height: 16, color: 'var(--text-2)' }} />
         <span>{opportunity.whyNow}</span>
       </div>
 
@@ -65,7 +65,7 @@ export function OpportunityInsightCard({
         {opportunity.labels.slice(0, compact ? 3 : 4).map((label) => (
           <span key={`${opportunity.symbol}-${label}`} className="badge badge-muted">{label}</span>
         ))}
-        <span className="badge badge-primary">Confidence {opportunity.confidence}</span>
+        <span className="badge badge-muted">Confidence {opportunity.confidence}</span>
       </div>
 
       {opportunity.scoreBreakdown?.length ? (
@@ -117,7 +117,7 @@ export function SectorPulseCard({ entry }: { entry: SectorRotationInsight }) {
   const tone = toneToBadge(entry.trend === 'bullish' ? 'bullish' : entry.trend === 'bearish' ? 'bearish' : 'balanced');
 
   return (
-    <article className={`sector-pulse-card sector-pulse-${entry.trend}`}>
+    <article className="sector-pulse-card">
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
         <div>
           <div className="stat-label">{entry.movement}</div>

@@ -29,7 +29,7 @@ const monoFont = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title:       'StockPulse — Intelligent Trading Companion',
+  title:       'InsightForge — Intelligent Trading Companion',
   description: 'Decision-first market companion for Indian retail traders — ranked opportunities, market narratives, sector rotation, watchlists, and recap.',
   keywords:    'NSE, BSE, Indian stocks, trading companion, stock stories, market narratives, sector rotation, watchlist, recap',
 };

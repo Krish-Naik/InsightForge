@@ -5,6 +5,11 @@ export interface Config {
   port:              number;
   nodeEnv:           string;
   mongoUri:          string;
+  redis: {
+    url: string;
+    ttl: number;          // default TTL in seconds
+    scannerTtl: number;  // scanner cache TTL
+  };
   jwt: { secret: string; expire: string };
   rateLimit: { windowMs: number; max: number };
   ai: {
@@ -48,7 +53,12 @@ const defaultModel = aiProvider === 'groq'
 export const config: Config = {
   port:    parseInt(process.env.PORT || '5001', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
-  mongoUri:process.env.MONGODB_URI || 'mongodb://localhost:27017/stockpulse',
+  mongoUri:process.env.MONGODB_URI || 'mongodb://localhost:27017/insightforge',
+  redis: {
+    url: process.env.REDIS_URL || 'redis://localhost:6379',
+    ttl: parseInt(process.env.REDIS_TTL || '60', 10),
+    scannerTtl: parseInt(process.env.REDIS_SCANNER_TTL || '300', 10),
+  },
   jwt: {
     secret: process.env.JWT_SECRET || 'CHANGE_ME_IN_PRODUCTION',
     expire: process.env.JWT_EXPIRE || '7d',

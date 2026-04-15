@@ -7,30 +7,30 @@ type Tone = 'default' | 'primary' | 'positive' | 'negative' | 'warning';
 
 const toneStyles: Record<Tone, CSSProperties> = {
   default: {
-    borderColor: 'var(--border)',
-    background: 'linear-gradient(180deg, rgba(255,248,236,0.05), rgba(255,248,236,0.02))',
+    borderColor: 'var(--border-light)',
+    background: 'var(--surface)',
   },
   primary: {
-    borderColor: 'rgba(214, 158, 79, 0.34)',
-    background: 'linear-gradient(135deg, rgba(214, 158, 79, 0.18), rgba(241, 215, 167, 0.08))',
+    borderColor: 'var(--border-light)',
+    background: 'var(--bg-2)',
   },
   positive: {
-    borderColor: 'rgba(92, 184, 150, 0.28)',
-    background: 'linear-gradient(135deg, rgba(92, 184, 150, 0.16), rgba(255,248,236,0.04))',
+    borderColor: 'rgba(34, 197, 94, 0.3)',
+    background: 'rgba(34, 197, 94, 0.05)',
   },
   negative: {
-    borderColor: 'rgba(201, 105, 90, 0.28)',
-    background: 'linear-gradient(135deg, rgba(201, 105, 90, 0.16), rgba(255,248,236,0.03))',
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    background: 'rgba(239, 68, 68, 0.05)',
   },
   warning: {
-    borderColor: 'rgba(234, 186, 96, 0.3)',
-    background: 'linear-gradient(135deg, rgba(234, 186, 96, 0.18), rgba(255,248,236,0.04))',
+    borderColor: 'rgba(245, 158, 11, 0.3)',
+    background: 'rgba(245, 158, 11, 0.05)',
   },
 };
 
 const toneText: Record<Tone, string> = {
   default: 'var(--text-1)',
-  primary: 'var(--primary)',
+  primary: 'var(--text-1)',
   positive: 'var(--green)',
   negative: 'var(--red)',
   warning: 'var(--amber)',
@@ -77,7 +77,7 @@ export function SectionCard({
   style?: CSSProperties;
 }) {
   return (
-    <section className="panel panel-dense" style={{ ...toneStyles[tone], ...style }}>
+    <section className="panel" style={{ ...toneStyles[tone], ...style }}>
       <div className="panel-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {Icon ? <Icon style={{ width: 16, height: 16, color: toneText[tone] }} /> : null}
@@ -107,11 +107,11 @@ export function MetricTile({
   icon?: LucideIcon;
 }) {
   return (
-    <div className="metric-card metric-card-dense" style={toneStyles[tone]}>
+    <div className="metric-card" style={toneStyles[tone]}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
         <div>
           <div className="stat-label">{label}</div>
-          <div className="metric-value" style={{ color: toneText[tone] === 'var(--text-1)' ? 'var(--text-1)' : toneText[tone] }}>{value}</div>
+          <div className="metric-value" style={{ color: tone === 'default' ? 'var(--text-1)' : toneText[tone] }}>{value}</div>
         </div>
         {Icon ? <Icon style={{ width: 18, height: 18, color: toneText[tone], flexShrink: 0 }} /> : null}
       </div>
@@ -128,7 +128,7 @@ export function TrendBadge({ tone, children }: { tone: Tone; children: ReactNode
       : tone === 'warning'
         ? 'badge badge-amber'
         : tone === 'primary'
-          ? 'badge badge-primary'
+          ? 'badge badge-muted'
           : 'badge badge-muted';
 
   return <span className={className}>{children}</span>;

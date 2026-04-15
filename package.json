@@ -1,8 +1,8 @@
 {
-  "name": "stockpulse",
+  "name": "insightforge",
   "version": "2.0.0",
   "private": true,
-  "description": "StockPulse — Real-time Indian Stock Market Terminal",
+  "description": "InsightForge — Real-time Indian Stock Market Terminal",
   "scripts": {
     "dev":            "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:frontend":   "cd frontend && npm run dev",

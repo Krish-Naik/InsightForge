@@ -86,7 +86,7 @@ export default function RecapPage() {
                 ))}
               </div>
             ) : (
-              <EmptyPanel title="No carry ideas" description="When leadership is too scattered, StockPulse avoids forcing a carry list." icon={TimerReset} />
+              <EmptyPanel title="No carry ideas" description="When leadership is too scattered, InsightForge avoids forcing a carry list." icon={TimerReset} />
             )}
           </SectionCard>
 

@@ -1,12 +1,12 @@
-# StockPulse Product Redesign Brief
+# InsightForge Product Redesign Brief
 
 ## 1. New Product Positioning
 
-StockPulse should stop behaving like a retail market terminal and start behaving like an intelligent trading companion for Indian markets.
+InsightForge should stop behaving like a retail market terminal and start behaving like an intelligent trading companion for Indian markets.
 
 ### New Promise
 
-StockPulse tells traders:
+InsightForge tells traders:
 
 - what matters now
 - why it matters
@@ -43,7 +43,7 @@ Compete on:
 
 ### Product Personality
 
-StockPulse should feel like:
+InsightForge should feel like:
 
 - a sharp market editor
 - a disciplined trading coach

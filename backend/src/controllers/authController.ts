@@ -28,7 +28,7 @@ export const authController = {
       throw new AppError('A valid workspace id is required', 400);
     }
 
-    const email = `workspace+${workspaceId}@stockpulse.local`;
+    const email = `workspace+${workspaceId}@insightforge.local`;
     let user = await User.findOne({ email });
 
     if (!user) {
