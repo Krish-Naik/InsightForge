@@ -582,7 +582,7 @@ export class YahooFinanceService {
     });
   }
 
-  static async getMarketMovers(type = 'gainers', count = 10): Promise<Quote[]> {
+  static async getMarketMovers(type = 'gainers', count = 50): Promise<Quote[]> {
     const universeQuotes = await this.getQuotes(MARKET_STOCKS.map((stock) => stock.symbol));
     const usable = universeQuotes.filter((quote) => quote.price > 0);
     const sorted = [...usable].sort((left, right) => {
@@ -787,11 +787,12 @@ export class YahooFinanceService {
     ]);
 
     const usable = quotes.filter((quote) => quote.price > 0);
+    const topMoversCount = 50;
     const summary = {
       indices,
-      gainers: [...usable].sort((left, right) => right.changePercent - left.changePercent).slice(0, 10),
-      losers: [...usable].sort((left, right) => left.changePercent - right.changePercent).slice(0, 10),
-      mostActive: [...usable].sort((left, right) => right.volume - left.volume).slice(0, 10),
+      gainers: [...usable].sort((left, right) => right.changePercent - left.changePercent).slice(0, topMoversCount),
+      losers: [...usable].sort((left, right) => left.changePercent - right.changePercent).slice(0, topMoversCount),
+      mostActive: [...usable].sort((left, right) => right.volume - left.volume).slice(0, topMoversCount),
       lastUpdated: new Date().toISOString(),
       marketStatus: indices.find((index) => index.price > 0)?.marketState || 'REGULAR',
     };

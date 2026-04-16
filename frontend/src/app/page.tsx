@@ -3,11 +3,88 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Activity, BrainCircuit, RefreshCw, ShieldAlert, Sparkles, Target, TrendingDown, TrendingUp, Waves } from 'lucide-react';
-import { OpportunityInsightCard, RecapInsightCard, SectorPulseCard } from '@/components/ui/insight-kit';
+import { MarketNarrativeCard, OpportunityInsightCard, RecapInsightCard, SectorPulseCard } from '@/components/ui/insight-kit';
 import { EmptyPanel, MetricTile, PageHeader, SectionCard, TrendBadge } from '@/components/ui/page-kit';
 import { marketAPI, type MarketSummary, type Quote, type SectorOverview, type TodayDesk } from '@/lib/api';
 import { formatCurrency, formatIST, formatLargeNumber, formatPercent, formatTimeAgo } from '@/lib/format';
 import { useMarketStream } from '@/lib/hooks/useMarketStream';
+
+const LARGE_CAP = new Set([
+  'RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'ICICIBANK', 'SBIN', 'BHARTIARTL',
+  'ITC', 'KOTAKBANK', 'LT', 'HCLTECH', 'BAJFINANCE', 'MARUTI', 'ASIANPAINT',
+  'SUNPHARMA', 'TITAN', 'AXISBANK', 'WIPRO', 'ULTRACEMCO', 'NTPC',
+  'ONGC', 'TATAMOTORS', 'POWERGRID', 'TATASTEEL', 'JSWSTEEL',
+  'M&M', 'ADANIENT', 'ADANIPORTS', 'GRASIM', 'TECHM',
+  'HINDUNILVR', 'DIVISLAB', 'DRREDDY', 'CIPLA', 'BRITANNIA',
+  'EICHERMOT', 'HEROMOTOCO', 'COALINDIA', 'BPCL', 'NESTLEIND',
+  'APOLLOHOSP', 'BAJAJFINSV', 'BAJAJ-AUTO', 'SBILIFE', 'HDFCLIFE',
+  'DABUR', 'HAVELLS', 'PIDILITIND', 'SIEMENS', 'TRENT',
+]);
+
+const MID_CAP = new Set([
+  'AUBANK', 'BALKRISIND', 'BANKBARODA', 'BIOCON', 'BOSCHLTD', 'CANBK', 'CHOLAFIN',
+  'CIPLA', 'COLPAL', 'CONCOR', 'CUMMINSIND', 'DABUR', 'DLF', 'FEDERALBNK',
+  'GAIL', 'GODREJCP', 'HAVELLS', 'HCC', 'HDFCAMC', 'HDFCLIFE', 'HINDALCO',
+  'HONAUT', 'ICICIPRULIFE', 'ICICIGI', 'IDFCFIRSTB', 'INDUSINDBK', 'IRCTC',
+  'JINDALSTEL', 'LUPIN', 'MARICO', 'MUTHOOTFIN', 'NMDC', 'OFSS', 'PEL',
+  'PETRONET', 'PFC', 'PGHL', 'PIDILITIND', 'PNB', 'POLYCAB', 'POWERGRID',
+  'PRESTIGE', 'RAIN', 'RECLTD', 'SAIL', 'SBICARD', 'SBILIFE', 'SOBHA',
+  'SUNTV', 'TATAPOWER', 'TORNTPHARM', 'TRENT', 'TVSMOTOR', 'UBL', 'UNIONBANK',
+  'VEDL', 'VOLTAS', 'WELSPUNCORP', 'YESBANK', 'ZEEL',
+]);
+
+const SMALL_CAP = new Set([
+  'ADANIENT', 'ADANIGAS', 'ADFFOODS', 'AJMERA', 'ALEMBICLTD', 'ALKYLAMINE', 'ALOKINDS',
+  'AMARAJABAT', 'ANUP', 'APLLTD', 'ARCB', 'ARIHANTCAP', 'ARIHANTFOODS', 'ARVIND',
+  'ASHOKLEY', 'ATUL', 'AVANTIFEED', 'BANDHANBNK', 'BEML', 'BHEL', 'CAMP',
+  'CANTABIL', 'CAPL', 'CARBORUNIV', 'CENTURYPLY', 'CENTURYTEXT', 'CHAMBLFERT',
+  'CHEMCON', 'CHENNPETRO', 'COFORGE', 'COROMANDEL', 'CROMPTON', 'CUB', 'DBL',
+  'DEEPAKNTR', 'DHFL', 'DIXON', 'DMART', 'DOD', 'DWARKESH', 'EDELWEISS',
+  'EIHOTEL', 'EIMCOELECON', 'ELGIEQUIP', 'ELIN', 'EQUITAS', 'ESCORTS', 'EXIDEIND',
+  'FINEORG', 'FINPIPE', 'FMGOETZE', 'GABRIEL', 'GANECOS', 'GDL', 'GENUSPACE',
+  'GEPIL', 'GESHIP', 'GLENMARK', 'GMRINFRA', 'GOCOLORS', 'GODREJAG', 'GODREJIND',
+  'GODREJP', 'GODREJPROP', 'GPIL', 'GRASIM', 'GSFC', 'GSPL', 'GUFIC', 'HBSL',
+  'HCC', 'HCLTECH', 'HERO', 'HFCL', 'HIKAL', 'HINDPETRO', 'HINDZINC', 'HONASA',
+  'HUBTOWN', 'IDBI', 'IDFC', 'IEX', 'IFBIND', 'IGL', 'INDHOTEL', 'INDIACEM',
+  'INDIAMART', 'INDIGO', 'INDUSTOWER', 'INTELACT', 'IOB', 'IPCALAB', 'JBL',
+  'JCHAC', 'JINDALPOLY', 'JKCEMENT', 'JKLAKSHMI', 'JMFINANC', 'JOC', 'JPASSOCIAT',
+  'JSL', 'JSWENERGY', 'JUBLFOOD', 'JUBLIN', 'JVS', 'JYOTHYLAB', 'KALPATPOWR',
+  'KANSAINER', 'KCP', 'KDDL', 'KEI', 'KNRCON', 'KOLTEPATIL', 'KRBL', 'KSB',
+  'LAXMIMACH', 'LEMONTREE', 'LICHSGFIN', 'LINDEINDIA', 'LTIM', 'MAHABANK',
+  'MAHINDCIE', 'MAHLIFE', 'MANAPPURAM', 'MANINFRA', 'MAS', 'MATRIMONY',
+  'MAWPHL', 'MAXHEALTH', 'MCDOWELL-N', 'MCL', 'MCX', 'MEDICAMEQ', 'MGL',
+  'MHRIL', 'MINDACORP', 'MINDAIND', 'MOIL', 'MOREPENLAB', 'MOTHERSUMI',
+  'MPHASIS', 'MRF', 'MRL', 'MRPL', 'MUTHOOTFIN', 'NAC', 'NAUKRI',
+  'NAVINFLUOR', 'NCC', 'NETWORK18', 'NGLFINE', 'NHC', 'NOCIL', 'NOID',
+  'NURMJ', 'OBEROIRLTY', 'OIL', 'OMAXE', 'ONMOBILE', 'ORIENTCEM', 'ORIENTELEC',
+  'PAISALO', 'PCBL', 'PERSISTENT', 'PFIZER', 'PIIND', 'PNCINFRA', 'PRAJIND',
+  'PRINCE', 'PRISM', 'PRIVISCL', 'PROPTIG', 'PVR', 'QUESS', 'RADIOCITY',
+  'RAILTEL', 'RAJRAYON', 'RAJTV', 'RAMCOIND', 'RAMCOSYS', 'RAMPRE', 'RANCH',
+  'RCOM', 'RCORP', 'REDINGTON', 'REFEX', 'RENGAS', 'RITES', 'RIVIGO',
+  'RSYSTEMS', 'RUBYMILL', 'RUPA', 'SABASE', 'SANDHAR', 'SANGAM', 'SANGHIIND',
+  'SARK', 'SCHAEFFLER', 'SEAMABLE', 'SELL', 'SEPOWER', 'SHYAMMETL', 'SIIL',
+  'SILGO', 'SIRCA', 'SIS', 'SJVN', 'SKFINDIA', 'SOUTHBANK', 'SPANDANA',
+  'SPCEN', 'SPICEJET', 'SPL', 'SPML', 'SRF', 'SRO', 'SSWL', 'STAR',
+  'STCINDIA', 'STEELXIND', 'STLTECH', 'SUBEX', 'SUDARSHAN', 'SUJ', 'SUMICHEM',
+  'SUNFLAG', 'SUNTECK', 'SUPRAJIT', 'SUPREMEIND', 'SWANENERGY', 'SYNGENE',
+  'SYRMA', 'TATACHEM', 'TATACOMM', 'TATACOFFEE', 'TATAELXSI', 'TATAGLOBAL',
+  'TATAINVEST', 'TATVA', 'TEJASNET', 'TFCILTD', 'THERMAX', 'THOMASCOOK',
+  'THYROCARE', 'TI', 'TIDCO', 'TNP', 'TOSHIBA', 'TREEHOUSE', 'TRITURBINE',
+  'TV18BRDCST', 'UCHW', 'UFLEX', 'ULMAT', 'UNICHEM', 'UNO', 'URJA',
+  'USHAMART', 'UTI', 'UTIAMC', 'VAKRANGE', 'VARROC', 'VASCONEQ', 'VBL',
+  'VENKEYS', 'VENUSREM', 'VGUARD', 'VINATIORG', 'VIPIND', 'VIRCHOW', 'VISAKA',
+  'VMART', 'VRLLOG', 'VSL', 'WABCOINDIA', 'WELCORP', 'WELSPUNS', 'WENDT',
+  'WESTLIFE', 'WHEELS', 'WOCKPHARMA', 'WONDERLA', 'WSF', 'ZENSARTECH',
+  'ZFCVINDIA', 'ZOMATO', 'ZYDUSWELL',
+]);
+
+type Segment = 'overall' | 'largeCap' | 'midCap' | 'smallCap';
+
+function filterBySegment(quotes: Quote[], segment: Segment): Quote[] {
+  if (segment === 'overall') return quotes;
+  const set = segment === 'largeCap' ? LARGE_CAP : segment === 'midCap' ? MID_CAP : SMALL_CAP;
+  return quotes.filter(q => set.has(q.symbol));
+}
 
 function toneForChange(value: number) {
   return value >= 0 ? 'positive' : 'negative';
@@ -54,6 +131,7 @@ export default function RootPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeSegment, setActiveSegment] = useState<Segment>('overall');
   const { connected, error: streamError } = useMarketStream(true);
 
   const loadOverview = useCallback(async () => {
@@ -86,7 +164,8 @@ export default function RootPage() {
   const negativeSectors = sectors.filter((entry) => entry.trend === 'bearish').length;
   const breadthLead = [...sectors].sort((left, right) => right.breadth - left.breadth).slice(0, 6);
   const breadthRisks = [...sectors].sort((left, right) => left.breadth - right.breadth).slice(0, 3);
-  const primaryIndices = preferredIndices(summary?.indices || []);
+  const allIndices = summary?.indices || [];
+  const primaryIndices = preferredIndices(allIndices);
   const activeWatch = desk?.stocksToWatch.slice(0, 3) || [];
   const breadthBias = sectors.length
     ? (sectors.reduce((sum, entry) => sum + entry.breadth, 0) / sectors.length)
@@ -123,124 +202,68 @@ export default function RootPage() {
         <MetricTile label="Breadth bias" value={formatPercent(breadthBias, 1)} tone={breadthBias >= 0 ? 'warning' : 'negative'} icon={Waves} subtext="Average sector breadth across the market" />
       </div>
 
-      <div className="workbench-grid-three">
+      <div className="full-width-section">
         <SectionCard title="Index Board" subtitle="Nifty and the headline tape before stock ideas" icon={Activity} tone="primary">
-          {primaryIndices.length ? (
-            <div className="compact-card-grid">
-              {primaryIndices.map((index) => (
-                <div key={index.symbol} className="list-card">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
-                    <div>
-                      <div className="stat-label">Index</div>
-                      <div style={{ marginTop: 8, fontSize: 15, fontWeight: 700 }}>{index.shortName}</div>
-                      <div className="metric-footnote">{index.symbol}</div>
+          {allIndices.length ? (
+            <div className="index-scroll-container">
+              <div className="index-scroll-inner">
+                {allIndices.map((index) => (
+                  <div key={index.symbol} className="index-card">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+                      <div>
+                        <div className="stat-label">Index</div>
+                        <div style={{ marginTop: 8, fontSize: 15, fontWeight: 700 }}>{index.shortName}</div>
+                        <div className="metric-footnote">{index.symbol}</div>
+                      </div>
+                      <TrendBadge tone={toneForChange(index.changePercent)}>{formatPercent(index.changePercent)}</TrendBadge>
                     </div>
-                    <TrendBadge tone={toneForChange(index.changePercent)}>{formatPercent(index.changePercent)}</TrendBadge>
+                    <div className="metric-value" style={{ marginTop: 12 }}>{formatCurrency(index.price)}</div>
+                    <div className="metric-footnote">Range {formatCurrency(index.dayLow)} to {formatCurrency(index.dayHigh)}</div>
                   </div>
-                  <div className="metric-value" style={{ marginTop: 12 }}>{formatCurrency(index.price)}</div>
-                  <div className="metric-footnote">Range {formatCurrency(index.dayLow)} to {formatCurrency(index.dayHigh)}</div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           ) : (
             <EmptyPanel title="Index board loading" description="Index context will appear here as soon as the cached market summary is ready." icon={Activity} />
           )}
         </SectionCard>
+      </div>
 
-        <SectionCard title="Market Narrative" subtitle="General overview before specific setups" icon={BrainCircuit}>
-          {desk ? (
-            <div className="stack-16">
-              <div>
-                <h2 style={{ fontSize: '1.55rem', lineHeight: 1.15 }}>{desk.narrative.headline}</h2>
-                <p className="metric-footnote" style={{ marginTop: 12 }}>{desk.narrative.summary}</p>
-              </div>
-              <div className="surface-inset">
-                <div className="stat-label">Watch for</div>
-                <div className="metric-footnote" style={{ marginTop: 10 }}>{desk.narrative.watchFor}</div>
-              </div>
-              <div className="surface-inset">
-                <div className="stat-label">Main risk</div>
-                <div className="metric-footnote" style={{ marginTop: 10 }}>{desk.narrative.risk}</div>
-              </div>
-            </div>
+      <div className="full-width-section">
+        <SectionCard title="Market Summary" subtitle="Real-time market overview for focused trading decisions" icon={BrainCircuit}>
+          {desk?.narrative ? (
+            <MarketNarrativeCard narrative={desk.narrative} />
           ) : (
             <EmptyPanel title="Overview loading" description="The narrative overview appears once market breadth and index context are combined." icon={BrainCircuit} />
           )}
         </SectionCard>
-
-        <SectionCard title="Risk Monitor" subtitle="Where the general tape is strengthening or cracking" icon={ShieldAlert}>
-          {sectors.length ? (
-            <div className="stack-12">
-              <div className="surface-inset">
-                <div className="stat-label">Strongest pocket</div>
-                <div className="metric-value">{breadthLead[0]?.sector || '—'}</div>
-                <div className="metric-footnote">Breadth {breadthLead[0] ? formatPercent(breadthLead[0].breadth, 0) : '—'}</div>
-              </div>
-              <div className="surface-inset">
-                <div className="stat-label">Weakest pocket</div>
-                <div className="metric-value">{breadthRisks[0]?.sector || '—'}</div>
-                <div className="metric-footnote">Breadth {breadthRisks[0] ? formatPercent(breadthRisks[0].breadth, 0) : '—'}</div>
-              </div>
-              <div className="surface-inset">
-                <div className="stat-label">Active tape</div>
-                <div className="metric-footnote" style={{ marginTop: 10 }}>{summary?.mostActive[0] ? `${summary.mostActive[0].symbol} is leading activity with ${formatLargeNumber(summary.mostActive[0].volume)} volume.` : 'Waiting for activity data.'}</div>
-              </div>
-            </div>
-          ) : (
-            <EmptyPanel title="Risk monitor loading" description="Sector breadth and pressure points will appear here once the market-wide snapshot is ready." icon={ShieldAlert} />
-          )}
-        </SectionCard>
       </div>
 
-      <div className="workbench-grid">
-        <SectionCard title="Sector Breadth" subtitle="Leadership, laggards, and where the market is actually broadening" icon={Waves}>
-          {desk?.sectorRotation.length ? (
-            <div className="panel-scroll stack-12">
-              {desk.sectorRotation.map((entry) => (
-                <SectorPulseCard key={entry.sector} entry={entry} />
+      <div className="full-width-section">
+        <SectionCard title="Tape Activity" subtitle="Gainers, losers, and most-active names across market segments" icon={Activity}>
+          <div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+              {(['overall', 'largeCap', 'midCap', 'smallCap'] as const).map((seg) => (
+                <button
+                  key={seg}
+                  onClick={() => setActiveSegment(seg)}
+                  className={`btn ${activeSegment === seg ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ padding: '6px 14px', fontSize: '0.85rem' }}
+                >
+                  {seg === 'overall' ? 'All Caps' : seg === 'largeCap' ? 'Large Cap' : seg === 'midCap' ? 'Mid Cap' : 'Small Cap'}
+                </button>
               ))}
             </div>
-          ) : (
-            <EmptyPanel title="Sector breadth unavailable" description="Sector breadth cards will appear here once the sector snapshot is ready." icon={Waves} />
-          )}
-        </SectionCard>
-
-        <SectionCard title="Tape Activity" subtitle="Gainers, losers, and most-active names for the general overview" icon={Activity}>
-          {summary ? (
-            <div className="grid-fit-220">
-              <QuoteList title="Top gainers" items={summary.gainers.slice(0, 4)} />
-              <QuoteList title="Top losers" items={summary.losers.slice(0, 4)} />
-              <QuoteList title="Most active" items={summary.mostActive.slice(0, 4)} />
-            </div>
-          ) : (
-            <EmptyPanel title="Tape activity unavailable" description="Market movers will appear here once the summary snapshot is loaded." icon={Activity} />
-          )}
-        </SectionCard>
-      </div>
-
-      <div className="workbench-grid">
-        <SectionCard title="Actionable Follow-Through" subtitle="Setups are still here, but they now sit behind the broader market read" icon={Target}>
-          {activeWatch.length ? (
-            <div className="compact-card-grid">
-              {activeWatch.map((entry, index) => (
-                <OpportunityInsightCard key={`${entry.id}-watch`} opportunity={entry} rank={index + 1} compact />
-              ))}
-            </div>
-          ) : (
-            <EmptyPanel title="No carry setups yet" description="Once the market overview identifies cleaner follow-through names, they will appear here." icon={Target} />
-          )}
-        </SectionCard>
-
-        <SectionCard title="Carry And Cautions" subtitle="What should frame tomorrow after the general market read" icon={ShieldAlert}>
-          {desk?.recap.length ? (
-            <div className="panel-scroll-tight stack-12">
-              {desk.recap.map((entry) => (
-                <RecapInsightCard key={`${entry.title}-${entry.symbols.join('-')}`} entry={entry} />
-              ))}
-            </div>
-          ) : (
-            <EmptyPanel title="Recap pending" description="Carry-forward notes appear once the system has enough context to summarize what matters next." icon={ShieldAlert} />
-          )}
+            {summary ? (
+              <div className="grid-fit-220">
+                <QuoteList title="Top Gainers" items={filterBySegment(summary.gainers, activeSegment).slice(0, 10)} />
+                <QuoteList title="Top Losers" items={filterBySegment(summary.losers, activeSegment).slice(0, 10)} />
+                <QuoteList title="Most Active" items={filterBySegment(summary.mostActive, activeSegment).slice(0, 10)} />
+              </div>
+            ) : (
+              <EmptyPanel title="Loading tape activity" description="Market movers will appear here once data is loaded." icon={Activity} />
+            )}
+          </div>
         </SectionCard>
       </div>
     </div>

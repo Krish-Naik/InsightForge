@@ -1,10 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowRight, Flame, Radar, ShieldAlert, Target, TrendingDown, TrendingUp } from 'lucide-react';
+import { ArrowRight, BrainCircuit, Flame, Radar, ShieldAlert, Target, TrendingDown, TrendingUp } from 'lucide-react';
 import { SymbolLink } from '@/components/ui/SymbolLink';
 import { TrendBadge } from '@/components/ui/page-kit';
-import type { InsightTone, OpportunityCard, RecapCard, SectorRotationInsight, StoryTimelineEntry } from '@/lib/api';
+import type { InsightTone, MarketNarrative, OpportunityCard, RecapCard, SectorRotationInsight, StoryTimelineEntry } from '@/lib/api';
 import { formatCurrency, formatPercent } from '@/lib/format';
 
 function toneToBadge(tone: InsightTone | 'positive' | 'negative' | 'warning' | 'primary') {
@@ -182,5 +182,49 @@ export function StoryTimeline({ items }: { items: StoryTimelineEntry[] }) {
         </div>
       ))}
     </div>
+  );
+}
+
+export function MarketNarrativeCard({ narrative }: { narrative: MarketNarrative }) {
+  const tone = toneToBadge(narrative.tone);
+  const Icon = narrative.tone === 'bullish' ? TrendingUp : narrative.tone === 'bearish' ? TrendingDown : BrainCircuit;
+
+  return (
+    <article className="market-narrative-card">
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+        <div style={{ flex: 1 }}>
+          <div className="stat-label">Market Summary</div>
+          <h2 style={{ fontSize: '1.25rem', lineHeight: 1.2, marginTop: 6 }}>{narrative.headline}</h2>
+          <p className="market-narrative-copy" style={{ marginTop: 12 }}>{narrative.summary}</p>
+        </div>
+        <TrendBadge tone={tone}>
+          <Icon style={{ width: 12, height: 12 }} />
+          {narrative.tone}
+        </TrendBadge>
+      </div>
+
+      <div className="market-narrative-grid">
+        {narrative.strongestSector && (
+          <div className="market-narrative-item">
+            <span className="stat-label">Strongest</span>
+            <span className="market-narrative-value text-green">{narrative.strongestSector}</span>
+          </div>
+        )}
+        {narrative.weakestSector && (
+          <div className="market-narrative-item">
+            <span className="stat-label">Weakest</span>
+            <span className="market-narrative-value text-red">{narrative.weakestSector}</span>
+          </div>
+        )}
+        <div className="market-narrative-item">
+          <span className="stat-label">Watch for</span>
+          <span className="market-narrative-value">{narrative.watchFor}</span>
+        </div>
+        <div className="market-narrative-item">
+          <span className="stat-label">Main risk</span>
+          <span className="market-narrative-value">{narrative.risk}</span>
+        </div>
+      </div>
+    </article>
   );
 }

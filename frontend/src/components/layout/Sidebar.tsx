@@ -53,9 +53,9 @@ export function Sidebar() {
       <div className="nav-note stack-8">
         <span className="nav-section-label" style={{ padding: 0 }}>Stack</span>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          <span className="badge badge-muted">Delayed feed</span>
-          <span className="badge badge-muted">Insight ranking</span>
-          <span className="badge badge-muted">Story intelligence</span>
+          <span className="badge badge-muted" style={{ background: '#333333', color: '#fff' }}>Delayed feed</span>
+          <span className="badge badge-muted" style={{ background: '#333333', color: '#fff' }}>Insight ranking</span>
+          <span className="badge badge-muted" style={{ background: '#333333', color: '#fff' }}>Story intelligence</span>
         </div>
       </div>
     </aside>
