@@ -72,7 +72,7 @@ export default function StockStoryPage() {
         actions={
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             {story?.generatedAt ? <span className="topbar-pill">Updated {formatTimeAgo(story.generatedAt)} • {formatIST(new Date(story.generatedAt))}</span> : null}
-            <Link href="/scanner" className="btn btn-ghost">
+            <Link href="/radar" className="btn btn-ghost">
               <ArrowLeft style={{ width: 14, height: 14 }} />
               Back to radar
             </Link>

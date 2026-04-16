@@ -51,7 +51,7 @@ export interface Quote {
   changePercent: number; volume: number; dayHigh: number; dayLow: number;
   previousClose: number; open: number; high52w: number; low52w: number;
   marketCap: number; currency: string; marketState: string; exchange: string;
-  timestamp: string;
+  timestamp: string; isStale?: boolean;
 }
 
 export interface Index extends Quote {
@@ -154,7 +154,6 @@ export type OpportunityState = 'fresh' | 'building' | 'extended' | 'weakening';
 export type ScreenerPlaybook = 'leadership' | 'quality' | 'pullback' | 'sympathy' | 'avoid';
 export type ScreenerSort = 'score' | 'momentum' | 'volume' | 'breakout' | 'sector' | 'value';
 export type SignalWindow = '5m' | '15m' | 'today';
-export type RadarSignalType = 'breakout' | 'unusual-volume' | 'sector-follow-through' | 'pullback-ready' | 'risk';
 
 export interface StoryTimelineEntry {
   label: string;
@@ -281,6 +280,62 @@ export interface ScreenerFilters {
   maxPriceToBook?: number | null;
   minRevenueGrowth?: number | null;
   minProfitMargins?: number | null;
+  minDividendYield?: number | null;
+  minRoe?: number | null;
+}
+
+// ── Radar engine types (Radar page only) ────────────────────────────────────
+export type RadarSignalType =
+  | 'breakout' | 'breakdown' | 'volume-spike'
+  | 'rsi-oversold' | 'rsi-overbought' | 'momentum-surge' | 'reversal-watch';
+
+export type RadarSignalStrength = 'strong' | 'moderate' | 'weak';
+export type RadarSignalDirection = 'bullish' | 'bearish' | 'neutral';
+
+export interface RadarSignalCard {
+  id:             string;
+  symbol:         string;
+  name:           string;
+  exchange:       string;
+  signalType:     RadarSignalType;
+  direction:      RadarSignalDirection;
+  strength:       RadarSignalStrength;
+  confidence:     number;
+  price:          number;
+  changePercent:  number;
+  volume:         number;
+  volumeRatio:    number;
+  week52Position: number;
+  rsiEstimate:    number;
+  entryZone:      number | null;
+  stopLoss:       number | null;
+  target:         number | null;
+  whyNow:         string;
+  sector:         string;
+  timestamp:      string;
+}
+
+export interface RadarSnapshot {
+  breakouts:       RadarSignalCard[];
+  breakdowns:      RadarSignalCard[];
+  volumeSpikes:    RadarSignalCard[];
+  rsiOversold:     RadarSignalCard[];
+  rsiOverbought:   RadarSignalCard[];
+  momentumSurge:   RadarSignalCard[];
+  reversalWatch:   RadarSignalCard[];
+  marketAvgVolume: number;
+  generatedAt:     string;
+  totalSignals:    number;
+}
+
+export interface SupportResistanceLevel {
+  symbol:     string;
+  price:      number;
+  support:    number;
+  resistance: number;
+  pivotHigh:  number;
+  pivotLow:   number;
+  trend:      'uptrend' | 'downtrend' | 'sideways';
 }
 
 export interface ScreenerFilterSummary {
@@ -493,31 +548,39 @@ export const marketAPI = {
   },
   getMarketMovers:  (type = 'gainers', count = 10): Promise<Quote[]> =>
     api.get(`/market/movers?type=${type}&count=${count}`),
-  getQuotes:        async (symbols: string[]): Promise<Quote[]>   => {
+  getQuotes: async (symbols: string[]): Promise<Quote[]> => {
     const uniqueSymbols = [...new Set(symbols.filter(Boolean))];
     if (!uniqueSymbols.length) return [];
 
     const batches = chunk(uniqueSymbols, MAX_BATCH_SIZE);
-    const responses = await Promise.all(
+    const settled = await Promise.allSettled(
       batches.map((batch) => api.get(`/market/quotes?symbols=${encodeURIComponent(batch.join(','))}`) as Promise<Quote[]>)
     );
 
-    return responses.flat();
+    const results: Quote[] = [];
+    for (const outcome of settled) {
+      if (outcome.status === 'fulfilled') results.push(...outcome.value);
+    }
+    return results;
   },
   getQuote:         (symbol: string): Promise<Quote>            =>
     api.get(`/market/quote/${encodeURIComponent(symbol)}`),
   searchStocks:     (q: string): Promise<SearchResult[]>         =>
     api.get(`/market/search?q=${encodeURIComponent(q)}`),
-  getAnalytics:  async (symbols: string[]): Promise<ScreenerMetric[]>   => {
+  getAnalytics: async (symbols: string[]): Promise<ScreenerMetric[]> => {
     const uniqueSymbols = [...new Set(symbols.filter(Boolean))];
     if (!uniqueSymbols.length) return [];
 
     const batches = chunk(uniqueSymbols, 25);
-    const responses = await Promise.all(
+    const settled = await Promise.allSettled(
       batches.map((batch) => api.get(`/market/analytics?symbols=${encodeURIComponent(batch.join(','))}`) as Promise<ScreenerMetric[]>)
     );
 
-    return responses.flat();
+    const results: ScreenerMetric[] = [];
+    for (const outcome of settled) {
+      if (outcome.status === 'fulfilled') results.push(...outcome.value);
+    }
+    return results;
   },
   getFundamentals:  async (symbols: string[]): Promise<ScreenerMetric[]> =>
     marketAPI.getAnalytics(symbols),
@@ -534,11 +597,16 @@ export const marketAPI = {
     api.get(`/market/story/${encodeURIComponent(symbol)}`),
   getCatalog:       (): Promise<MarketCatalog>                    => api.get('/market/catalog'),
   getNiftyStocks:   (): Promise<string[]>                          => api.get('/market/nifty-stocks'),
-  getNews:          (filter = 'all', category?: string, limit = 25): Promise<NewsItem[]> => {
+  getNews: (filter = 'all', category?: string, limit = 25): Promise<NewsItem[]> => {
     let url = `/market/news?filter=${filter}&limit=${limit}`;
     if (category && category !== 'All') url += `&category=${category}`;
     return api.get(url);
   },
+  // ── Radar page signals (engine-driven, no AI) ────────────────────────────
+  getRadarSnapshot: (limit = 40): Promise<RadarSnapshot> =>
+    api.get(`/market/radar/signals?limit=${limit}`),
+  getRadarSR: (symbol: string): Promise<SupportResistanceLevel> =>
+    api.get(`/market/radar/sr/${encodeURIComponent(symbol)}`),
 };
 
 export const authAPI = {

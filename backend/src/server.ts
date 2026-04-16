@@ -154,6 +154,32 @@ setInterval(async () => {
   } catch { /* ignore */ }
 }, 20_000);
 
+// ── Metrics ───────────────────────────────────────────────────────────────────
+app.get('/api/metrics', (_req: Request, res: Response) => {
+  const batchStatus = require('./services/batchWorker.js');
+  const cacheStatus = require('./services/stockCacheService.js');
+  const universe = MarketUniverseService.getStatus();
+  
+  res.json({
+    batch: {
+      lastRun: batchStatus.getLastRunStatus?.() || null,
+      isRunning: batchStatus.isJobRunning?.() || false,
+    },
+    cache: {
+      stocksCount: cacheStatus.getCacheStats?.()?.stocks || 0,
+      indicesCount: cacheStatus.getCacheStats?.()?.indices || 0,
+      scannerCache: cacheStatus.getScannerCacheStatus?.() || null,
+    },
+    universe: {
+      loaded: universe.loaded,
+      size: universe.size,
+      loading: universe.loading,
+      lastUpdatedAt: universe.lastUpdatedAt,
+    },
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/api/auth',       authRoutes);
 app.use('/api/watchlists', watchlistRoutes);

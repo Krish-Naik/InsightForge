@@ -26,9 +26,10 @@ export interface StockCacheData {
   timestamp: string;
 }
 
+/** Flexible scanner cache — stores either ScreenerMetric or Quote arrays */
 export interface ScannerCacheData {
-  type: 'movers' | 'volume' | 'breakout' | 'falling';
-  stocks: ScreenerMetric[];
+  type: string;
+  stocks: (ScreenerMetric | Quote)[];
   generatedAt: string;
   expiresAt: string;
 }
@@ -172,14 +173,20 @@ export async function getMultipleIndices(symbols: string[]): Promise<Map<string,
   return result;
 }
 
-export async function setScannerCache(type: string, data: ScannerCacheData): Promise<void> {
+export async function setScannerCache(type: string, stocks: (ScreenerMetric | Quote)[], ttl?: number): Promise<void> {
   try {
     const client = await getClient();
     const key = getScannerKey(type);
-    const expiry = config.redis.scannerTtl;
-    
+    const expiry = ttl || config.redis.scannerTtl;
+    const now = new Date();
+    const data: ScannerCacheData = {
+      type,
+      stocks,
+      generatedAt: now.toISOString(),
+      expiresAt:   new Date(now.getTime() + expiry * 1000).toISOString(),
+    };
     await client.setex(key, expiry, JSON.stringify(data));
-    logger.debug(`Cached scanner data for ${type}, TTL: ${expiry}s`);
+    logger.debug(`Cached scanner:${type} — ${stocks.length} items, TTL: ${expiry}s`);
   } catch (error) {
     logger.error(`Failed to cache scanner data for ${type}: ${(error as Error).message}`);
   }
@@ -189,12 +196,39 @@ export async function getScannerCache(type: string): Promise<ScannerCacheData | 
   try {
     const client = await getClient();
     const key = getScannerKey(type);
-    
     const data = await client.get(key);
     return data ? JSON.parse(data) : null;
   } catch (error) {
     logger.error(`Failed to get scanner cache for ${type}: ${(error as Error).message}`);
     return null;
+  }
+}
+
+/** Retrieve all cached stock quotes (used for batch scanner computation) */
+export async function getAllStocks(): Promise<StockCacheData[]> {
+  try {
+    const client = await getClient();
+    const pattern = `${STOCK_KEY_PREFIX}:*`;
+    const keys = await client.keys(pattern);
+    if (!keys.length) return [];
+
+    const pipeline = client.pipeline();
+    for (const key of keys) pipeline.get(key);
+    const responses = await pipeline.exec();
+    if (!responses) return [];
+
+    const results: StockCacheData[] = [];
+    for (const [err, raw] of responses) {
+      if (!err && raw) {
+        try {
+          results.push(JSON.parse(raw as string) as StockCacheData);
+        } catch { /* skip malformed */ }
+      }
+    }
+    return results;
+  } catch (error) {
+    logger.error(`getAllStocks failed: ${(error as Error).message}`);
+    return [];
   }
 }
 
@@ -282,4 +316,19 @@ export async function getCacheStats(): Promise<{ keys: number; memory: string }>
     logger.error(`Failed to get cache stats: ${(error as Error).message}`);
     return { keys: 0, memory: 'unknown' };
   }
+}
+
+export async function getScannerCacheStatus(): Promise<Record<string, { count: number; generatedAt: string | null }>> {
+  const scannerTypes = ['gainers', 'losers', 'volumeSpike', 'rsiOversold', 'rsiOverbought', 'breakouts', 'breakdowns'];
+  const status: Record<string, { count: number; generatedAt: string | null }> = {};
+  
+  for (const type of scannerTypes) {
+    const data = await getScannerCache(type);
+    status[type] = {
+      count: data?.stocks?.length || 0,
+      generatedAt: data?.generatedAt || null,
+    };
+  }
+  
+  return status;
 }

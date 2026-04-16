@@ -406,7 +406,14 @@ function getTrendLabel(score: number): 'bullish' | 'bearish' | 'neutral' {
   return 'neutral';
 }
 
-async function fetchQuoteBatch(targets: YahooTarget[]): Promise<Map<string, Quote>> {
+const FETCH_RETRY_BASE_MS = 1_000;
+const FETCH_MAX_RETRIES   = 3;
+
+function fetchSleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, Math.round(ms * (0.8 + Math.random() * 0.4))));
+}
+
+async function fetchQuoteBatchOnce(targets: YahooTarget[]): Promise<Map<string, Quote>> {
   const response = await http.get<YahooSparkResponse>('/v7/finance/spark', {
     params: {
       symbols: targets.map((target) => target.yahooSymbol).join(','),
@@ -440,6 +447,29 @@ async function fetchQuoteBatch(targets: YahooTarget[]): Promise<Map<string, Quot
   return mapped;
 }
 
+async function fetchQuoteBatch(targets: YahooTarget[], attempt = 1): Promise<Map<string, Quote>> {
+  try {
+    return await fetchQuoteBatchOnce(targets);
+  } catch (error) {
+    const msg    = (error as Error).message;
+    const is429  = msg.includes('429') || msg.includes('Too Many Requests') || msg.includes('rate limit');
+    const isNet  = msg.includes('ECONNRESET') || msg.includes('ETIMEDOUT') || msg.includes('timeout');
+    const canRetry = (is429 || isNet) && attempt <= FETCH_MAX_RETRIES;
+
+    if (canRetry) {
+      const delay = FETCH_RETRY_BASE_MS * Math.pow(2, attempt - 1) + (is429 ? 4_000 : 0);
+      logger.warn(`Yahoo Spark retry ${attempt}/${FETCH_MAX_RETRIES} in ${Math.round(delay)}ms (${is429 ? '429' : 'net'})`);
+      await fetchSleep(delay);
+      return fetchQuoteBatch(targets, attempt + 1);
+    }
+
+    logger.warn(`Yahoo Spark batch failed permanently: ${msg}`);
+    const fallback = new Map<string, Quote>();
+    for (const target of targets) fallback.set(target.requestSymbol, emptyQuote(target));
+    return fallback;
+  }
+}
+
 async function getQuotesForTargets(targets: YahooTarget[]): Promise<Quote[]> {
   const results = new Map<string, Quote>();
   const missing: YahooTarget[] = [];
@@ -453,17 +483,17 @@ async function getQuotesForTargets(targets: YahooTarget[]): Promise<Quote[]> {
     missing.push(target);
   }
 
-  for (const batch of chunk(missing, QUOTE_BATCH_SIZE)) {
-    try {
-      const batchResults = await fetchQuoteBatch(batch);
-      for (const [symbol, quote] of batchResults.entries()) {
+  // Use allSettled so one failing batch does not abort the others
+  const batches  = chunk(missing, QUOTE_BATCH_SIZE);
+  const settled  = await Promise.allSettled(batches.map(batch => fetchQuoteBatch(batch)));
+
+  for (const outcome of settled) {
+    if (outcome.status === 'fulfilled') {
+      for (const [symbol, quote] of outcome.value.entries()) {
         results.set(symbol, quote);
       }
-    } catch (error) {
-      logger.warn(`Yahoo quote batch failed: ${(error as Error).message}`);
-      for (const target of batch) {
-        results.set(target.requestSymbol, emptyQuote(target));
-      }
+    } else {
+      logger.warn(`Batch rejected in allSettled: ${(outcome.reason as Error).message}`);
     }
   }
 
@@ -561,10 +591,8 @@ export class YahooFinanceService {
   }
 
   static async getIndex(symbol: string): Promise<Index | null> {
-    const [index] = await this.getIndices();
     const indices = await this.getIndices();
-    const found = indices.find(idx => idx.symbol === symbol || idx.symbol.includes(symbol));
-    return found || null;
+    return indices.find(idx => idx.symbol === symbol || idx.symbol.includes(symbol)) || null;
   }
 
   static async getQuotes(symbols: string[]): Promise<Quote[]> {
@@ -781,10 +809,15 @@ export class YahooFinanceService {
     }>(cacheKey);
     if (cached) return cached;
 
-    const [indices, quotes] = await Promise.all([
+    const [indicesResult, quotesResult] = await Promise.allSettled([
       this.getIndices(),
       this.getQuotes(unique([...NIFTY_50_STOCKS, ...MARKET_STOCKS.map((stock) => stock.symbol)])),
     ]);
+
+    const indices = indicesResult.status === 'fulfilled' ? indicesResult.value : [];
+    const quotes  = quotesResult.status  === 'fulfilled' ? quotesResult.value  : [];
+    if (indicesResult.status === 'rejected') logger.warn(`getMarketSummary indices failed: ${(indicesResult.reason as Error).message}`);
+    if (quotesResult.status  === 'rejected') logger.warn(`getMarketSummary quotes failed: ${(quotesResult.reason as Error).message}`);
 
     const usable = quotes.filter((quote) => quote.price > 0);
     const topMoversCount = 50;

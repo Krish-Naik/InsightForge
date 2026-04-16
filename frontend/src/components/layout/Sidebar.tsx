@@ -8,7 +8,7 @@ import { useState } from 'react';
 
 const NAV = [
   { href: '/', label: 'Today', icon: Activity, desc: 'Live brief, top opportunities, sector flow' },
-  { href: '/scanner', label: 'Radar', icon: Zap, desc: 'Auto-detected setups and avoid lists' },
+  { href: '/radar', label: 'Radar', icon: Zap, desc: 'Auto-detected setups and avoid lists' },
   { href: '/screener', label: 'Guided Screener', icon: Compass, desc: 'Playbooks instead of filter mazes' },
   { href: '/watchlist', label: 'Watchlist', icon: Star, desc: 'Names ranked by urgency and timing' },
   { href: '/portfolio', label: 'Portfolio', icon: Wallet, desc: 'Conviction, exposure, and carry' },
