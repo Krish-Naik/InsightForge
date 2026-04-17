@@ -73,6 +73,8 @@ export interface MarketSummary {
   marketStatus: string;
 }
 
+export type CapFilter = 'all' | 'largecap' | 'midcap' | 'smallcap';
+
 export interface ScreenerMetric {
   symbol: string;
   name: string;
@@ -607,6 +609,8 @@ export const marketAPI = {
     api.get(`/market/radar/signals?limit=${limit}`),
   getRadarSR: (symbol: string): Promise<SupportResistanceLevel> =>
     api.get(`/market/radar/sr/${encodeURIComponent(symbol)}`),
+  getMovers: (cap: CapFilter = 'all'): Promise<{ gainers: Quote[]; losers: Quote[]; volumeLeaders: Quote[] }> =>
+    api.get(`/market/movers/by-cap?cap=${cap}`),
 };
 
 export const authAPI = {

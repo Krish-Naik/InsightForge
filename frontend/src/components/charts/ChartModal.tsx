@@ -6,12 +6,17 @@ import { marketAPI, type Quote, type HistoricalBar } from '@/lib/api';
 import { formatCurrency, formatPercent } from '@/lib/format';
 
 const PERIODS = [
+  { label: '5m', value: '5m' },
+  { label: '15m', value: '15m' },
+  { label: '30m', value: '30m' },
+  { label: '1H', value: '1h' },
   { label: '1D', value: '1d' },
   { label: '5D', value: '5d' },
   { label: '1M', value: '1mo' },
   { label: '3M', value: '3mo' },
   { label: '6M', value: '6mo' },
   { label: '1Y', value: '1y' },
+  { label: 'ALL', value: 'max' },
 ];
 
 function toChartTime(value: string): number | null {
@@ -146,11 +151,11 @@ function ChartModalInner() {
       containerRef.current.innerHTML = '';
 
       chart = createChart(containerRef.current, {
-        layout: { background: { type: ColorType.Solid, color: '#0f1320' }, textColor: '#8898b4', fontSize: 11 },
-        grid: { vertLines: { color: 'rgba(30,42,64,0.5)' }, horzLines: { color: 'rgba(30,42,64,0.5)' } },
+        layout: { background: { type: ColorType.Solid, color: '#ffffff' }, textColor: '#374151', fontSize: 11 },
+        grid: { vertLines: { color: '#e5e7eb' }, horzLines: { color: '#e5e7eb' } },
         crosshair: { mode: CrosshairMode.Normal },
-        rightPriceScale: { borderColor: 'rgba(30,42,64,0.8)', scaleMargins: { top: 0.08, bottom: 0.22 } },
-        timeScale: { borderColor: 'rgba(30,42,64,0.8)', rightOffset: 5, barSpacing: 8, timeVisible: true },
+        rightPriceScale: { borderColor: '#e5e7eb', scaleMargins: { top: 0.08, bottom: 0.22 } },
+        timeScale: { borderColor: '#e5e7eb', rightOffset: 5, barSpacing: 10, timeVisible: true },
         handleScroll: true,
         handleScale: true,
         width: containerRef.current.clientWidth,
@@ -158,9 +163,9 @@ function ChartModalInner() {
       });
 
       const candle = chart.addSeries(CandlestickSeries, {
-        upColor: '#22c55e', downColor: '#ef4444',
-        borderUpColor: '#22c55e', borderDownColor: '#ef4444',
-        wickUpColor: '#22c55e', wickDownColor: '#ef4444',
+        upColor: '#16a34a', downColor: '#dc2626',
+        borderUpColor: '#16a34a', borderDownColor: '#dc2626',
+        wickUpColor: '#16a34a', wickDownColor: '#dc2626',
       });
 
       const vol = chart.addSeries(HistogramSeries, {
@@ -243,29 +248,29 @@ function ChartModalInner() {
         className={`relative glass flex flex-col transition-all duration-200 shadow-2xl ${
           full ? 'w-full h-full rounded-none' : 'w-[96vw] h-[88vh] max-w-[1500px] rounded-xl'
         }`}
-        style={{ background: '#0f1320', border: '1px solid #1e2a40' }}
+        style={{ background: '#ffffff', border: '1px solid #e5e7eb' }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: '#1e2a40' }}>
+        <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: '#e5e7eb' }}>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <span className="pulse-dot" style={{ background: up ? 'var(--green)' : 'var(--red)' }} />
-              <span className="mono font-bold text-base" style={{ color: 'var(--text-1)' }}>
+              <span className="mono font-bold text-base" style={{ color: '#111827' }}>
                 {exchange}:{activeSymbol}
               </span>
             </div>
             {quote && (
               <div className="flex items-center gap-3">
-                <span className="mono font-bold text-lg" style={{ color: 'var(--text-1)' }}>
+                <span className="mono font-bold text-lg" style={{ color: '#111827' }}>
                   {formatCurrency(quote.price)}
                 </span>
                 <span className="badge" style={{
-                  background: up ? 'var(--green-dim)' : 'var(--red-dim)',
+                  background: up ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)',
                   color:       up ? 'var(--green)'    : 'var(--red)',
                 }}>
                   {formatPercent(quote.changePercent)}
                 </span>
-                <span className="text-xs" style={{ color: 'var(--text-2)' }}>
+                <span className="text-xs" style={{ color: '#6b7280' }}>
                   Vol: {quote.volume > 0 ? (quote.volume / 1e5).toFixed(2) + 'L' : '—'}
                 </span>
               </div>
@@ -305,17 +310,17 @@ function ChartModalInner() {
         {/* Chart area */}
         <div className="flex-1 relative overflow-hidden">
           {loading && (
-            <div className="absolute inset-0 flex items-center justify-center z-10" style={{ background: '#0f1320' }}>
+            <div className="absolute inset-0 flex items-center justify-center z-10" style={{ background: '#ffffff' }}>
               <div className="flex flex-col items-center gap-3">
-                <Loader2 className="w-6 h-6 anim-spin" style={{ color: 'var(--primary)' }} />
-                <span className="text-xs" style={{ color: 'var(--text-2)' }}>Loading chart data…</span>
+                <Loader2 className="w-6 h-6 anim-spin" style={{ color: '#111827' }} />
+                <span className="text-xs" style={{ color: '#6b7280' }}>Loading chart data…</span>
               </div>
             </div>
           )}
           {error && !loading && (
-            <div className="absolute inset-0 flex items-center justify-center z-10" style={{ background: '#0f1320' }}>
+            <div className="absolute inset-0 flex items-center justify-center z-10" style={{ background: '#ffffff' }}>
               <div className="text-center">
-                <div className="text-sm mb-1" style={{ color: 'var(--red)' }}>{error}</div>
+                <div className="text-sm mb-1" style={{ color: '#dc2626' }}>{error}</div>
                 <button onClick={() => loadData(activeSymbol, period)} className="btn btn-ghost text-xs mt-2">
                   Retry
                 </button>
@@ -327,13 +332,13 @@ function ChartModalInner() {
 
         {/* Footer bar */}
         {quote && (
-          <div className="flex items-center gap-6 px-4 py-2 text-xs border-t" style={{ borderColor: '#1e2a40', color: 'var(--text-2)' }}>
-            <span>O: <span className="mono" style={{ color: 'var(--text-1)' }}>{formatCurrency(quote.open)}</span></span>
-            <span>H: <span className="mono" style={{ color: 'var(--green)' }}>{formatCurrency(quote.dayHigh)}</span></span>
-            <span>L: <span className="mono" style={{ color: 'var(--red)' }}>{formatCurrency(quote.dayLow)}</span></span>
-            <span>Prev: <span className="mono" style={{ color: 'var(--text-1)' }}>{formatCurrency(quote.previousClose)}</span></span>
-            <span>52W H: <span className="mono" style={{ color: 'var(--green)' }}>{formatCurrency(quote.high52w)}</span></span>
-            <span>52W L: <span className="mono" style={{ color: 'var(--red)' }}>{formatCurrency(quote.low52w)}</span></span>
+          <div className="flex items-center gap-6 px-4 py-2 text-xs border-t" style={{ borderColor: '#e5e7eb', color: '#6b7280' }}>
+            <span>O: <span className="mono" style={{ color: '#111827' }}>{formatCurrency(quote.open)}</span></span>
+            <span>H: <span className="mono" style={{ color: '#16a34a' }}>{formatCurrency(quote.dayHigh)}</span></span>
+            <span>L: <span className="mono" style={{ color: '#dc2626' }}>{formatCurrency(quote.dayLow)}</span></span>
+            <span>Prev: <span className="mono" style={{ color: '#111827' }}>{formatCurrency(quote.previousClose)}</span></span>
+            <span>52W H: <span className="mono" style={{ color: '#16a34a' }}>{formatCurrency(quote.high52w)}</span></span>
+            <span>52W L: <span className="mono" style={{ color: '#dc2626' }}>{formatCurrency(quote.low52w)}</span></span>
             <span>SMA20 / SMA50 / EMA21 enabled</span>
           </div>
         )}

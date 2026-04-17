@@ -449,7 +449,7 @@ function buildMarketNarrative(summary: Awaited<ReturnType<typeof MarketDataServi
       ? `Watch whether ${strongestSector} keeps broadening beyond its top one or two leaders.`
       : 'Watch for a sector to establish cleaner leadership before leaning aggressive.',
     risk: weakestSector
-      ? `${weakestSector} remains the main drag. If more sectors join that weakness, today’s tone can fade quickly.`
+      ? `${weakestSector} remains the main drag. If more sectors join that weakness, today's tone can fade quickly.`
       : 'Leadership is still thin enough to reverse if volume fades.',
     tone,
     strongestSector,

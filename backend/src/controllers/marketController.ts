@@ -74,6 +74,13 @@ export const marketController = {
     res.json({ success: true, data, timestamp: new Date().toISOString() });
   }),
 
+  getMoversByCap: asyncHandler(async (req: Request, res: Response) => {
+    setCacheHeaders(res, 30);
+    const { cap = 'all' } = req.query;
+    const data = await MarketDataService.getMoversByCap(cap as string);
+    res.json({ success: true, data, timestamp: new Date().toISOString() });
+  }),
+
   getQuotes: asyncHandler(async (req: Request, res: Response) => {
     setCacheHeaders(res, 15);
     const { symbols } = req.query;
@@ -196,11 +203,12 @@ export const marketController = {
     setCacheHeaders(res, 300, 900);
     const { symbol } = req.params;
     const { period = '1mo' } = req.query;
-    const validPeriods = ['15m', '1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y'];
+    const validPeriods = ['5m', '15m', '30m', '1h', '1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'max'];
     if (!validPeriods.includes(period as string))
       throw new AppError(`Invalid period. Use: ${validPeriods.join(', ')}`, 400);
 
-    const data = await MarketDataService.getHistoricalData(symbol, period as string);
+    const resolvedPeriod = period === 'max' ? '10y' : (period as string);
+    const data = await MarketDataService.getHistoricalData(symbol, resolvedPeriod);
     res.json({ success: true, data, timestamp: new Date().toISOString() });
   }),
 

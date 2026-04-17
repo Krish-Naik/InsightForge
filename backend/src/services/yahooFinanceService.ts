@@ -344,28 +344,36 @@ function getHistoryTtl(period: string): number {
 
 function getHistoryParams(period: string): { range: string; interval: string } {
   switch (period) {
+    case '5m':
+      return { range: '730d', interval: '5m' };
     case '15m':
-      return { range: '1d', interval: '15m' };
+      return { range: '730d', interval: '15m' };
+    case '30m':
+      return { range: '730d', interval: '30m' };
+    case '1h':
+      return { range: '730d', interval: '1h' };
     case '1d':
-      return { range: '1d', interval: '5m' };
+      return { range: 'max', interval: '5m' };
     case '5d':
-      return { range: '5d', interval: '15m' };
+      return { range: 'max', interval: '30m' };
     case '1mo':
-      return { range: '1mo', interval: '1d' };
+      return { range: 'max', interval: '1h' };
     case '3mo':
-      return { range: '3mo', interval: '1d' };
+      return { range: 'max', interval: '1d' };
     case '6mo':
-      return { range: '6mo', interval: '1d' };
+      return { range: 'max', interval: '1d' };
     case '1y':
-      return { range: '1y', interval: '1d' };
+      return { range: 'max', interval: '1d' };
     case '2y':
-      return { range: '2y', interval: '1d' };
+      return { range: 'max', interval: '1wk' };
     case '5y':
-      return { range: '5y', interval: '1wk' };
+      return { range: 'max', interval: '1wk' };
     case '10y':
-      return { range: '10y', interval: '1mo' };
+      return { range: 'max', interval: '1mo' };
+    case 'max':
+      return { range: 'max', interval: '1wk' };
     default:
-      return { range: '3mo', interval: '1d' };
+      return { range: 'max', interval: '1d' };
   }
 }
 
@@ -601,12 +609,13 @@ export class YahooFinanceService {
   }
 
   static async getIndices(): Promise<Index[]> {
-    const quotes = await this.getQuotes(MARKET_INDICES.map((index) => index.name));
-    const bySymbol = new Map(quotes.map((quote) => [quote.symbol, quote]));
+    const names = MARKET_INDICES.map((index) => index.name);
+    const quotes = await this.getQuotes(names);
+    const byName = new Map(quotes.map((quote) => [quote.symbol, quote]));
 
     return MARKET_INDICES.map((index) => {
-      const quote = bySymbol.get(index.name) || emptyQuote(resolveTarget(index.name));
-      return toIndex(quote, index);
+      const quote = byName.get(index.name);
+      return toIndex(quote || emptyQuote(resolveTarget(index.yahooSymbol)), index);
     });
   }
 

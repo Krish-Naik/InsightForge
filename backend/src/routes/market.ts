@@ -15,6 +15,7 @@ router.get('/sectors/all',                 marketController.getAllSectorsData);
 router.get('/sectors/:sector/stocks',      marketController.getStocksBySector);
 router.get('/sectors/:sector/analytics',   marketController.getSectorAnalytics);
 router.get('/movers',                      marketController.getMarketMovers);
+router.get('/movers/by-cap',                 marketController.getMoversByCap);
 // ── Radar page endpoints (trading signals only) ─────────────────────────────
 router.get('/radar/signals',               marketController.getRadarSnapshot);
 router.get('/radar/sr/:symbol',            marketController.getSignalSupportResistance);

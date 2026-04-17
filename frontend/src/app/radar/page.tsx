@@ -68,7 +68,7 @@ function tabTitle(t: SignalTab) {
 // ── Skeleton ─────────────────────────────────────────────────────────────────
 function SkeletonCard() {
   return (
-    <div className="skeleton" style={{ height: 280, borderRadius: 14, background: 'var(--bg-2)', animation: 'skeleton-pulse 1.6s ease-in-out infinite' }} />
+    <div className="skeleton" style={{ height: 260, borderRadius: 14, background: 'var(--bg-2)', animation: 'skeleton-pulse 1.6s ease-in-out infinite' }} />
   );
 }
 
@@ -108,53 +108,55 @@ function SignalCard({ card }: { card: RadarSignalCard }) {
       border: `1px solid var(--border)`,
       borderTop: `3px solid ${accentColor}`,
       borderRadius: 14,
-      padding: 16,
+      padding: 12,
       display: 'flex',
       flexDirection: 'column',
-      gap: 12,
+      gap: 8,
+      minWidth: 0,
+      overflow: 'hidden',
     }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
-            <span style={{ fontSize: 15, fontWeight: 800, fontFamily: 'var(--font-mono)', letterSpacing: '-0.01em' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 2, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 14, fontWeight: 800, fontFamily: 'var(--font-mono)', letterSpacing: '-0.01em' }}>
               {card.symbol}
             </span>
-            <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: `${accentColor}20`, color: accentColor, display: 'flex', alignItems: 'center', gap: 4 }}>
-              <TabIcon style={{ width: 10, height: 10 }} />
+            <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 20, background: `${accentColor}20`, color: accentColor, display: 'flex', alignItems: 'center', gap: 3, whiteSpace: 'nowrap' }}>
+              <TabIcon style={{ width: 9, height: 9 }} />
               {tabTitle(card.signalType)}
             </span>
-            <span style={{ fontSize: 10, fontWeight: 700, color: strengthColor(card.strength) }}>
+            <span style={{ fontSize: 9, fontWeight: 700, color: strengthColor(card.strength), whiteSpace: 'nowrap' }}>
               {card.strength.toUpperCase()}
             </span>
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{card.exchange} · {card.sector}</div>
+          <div style={{ fontSize: 10, color: 'var(--text-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{card.exchange} · {card.sector}</div>
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 17, fontWeight: 800, fontFamily: 'var(--font-mono)' }}>{formatCurrency(card.price)}</div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: card.changePercent >= 0 ? 'var(--green)' : 'var(--red)' }}>
+        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 800, fontFamily: 'var(--font-mono)' }}>{formatCurrency(card.price)}</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: card.changePercent >= 0 ? 'var(--green)' : 'var(--red)' }}>
             {card.changePercent >= 0 ? '▲' : '▼'} {formatPercent(card.changePercent)}
           </div>
         </div>
       </div>
 
       {/* Signal metrics */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
-        <div style={{ background: 'var(--bg-2)', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
-          <div style={{ fontSize: 10, color: 'var(--text-3)', marginBottom: 2 }}>52w Pos</div>
-          <div style={{ fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-mono)', color: card.week52Position >= 80 ? 'var(--green)' : card.week52Position <= 20 ? 'var(--red)' : 'var(--text-1)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4 }}>
+        <div style={{ background: 'var(--bg-2)', borderRadius: 6, padding: '6px 8px', textAlign: 'center' }}>
+          <div style={{ fontSize: 9, color: 'var(--text-3)', marginBottom: 1 }}>52w Pos</div>
+          <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-mono)', color: card.week52Position >= 80 ? 'var(--green)' : card.week52Position <= 20 ? 'var(--red)' : 'var(--text-1)' }}>
             {card.week52Position}%
           </div>
         </div>
-        <div style={{ background: 'var(--bg-2)', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
-          <div style={{ fontSize: 10, color: 'var(--text-3)', marginBottom: 2 }}>RSI ~</div>
-          <div style={{ fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-mono)', color: card.rsiEstimate >= 70 ? 'var(--amber)' : card.rsiEstimate <= 30 ? '#38bdf8' : 'var(--text-1)' }}>
+        <div style={{ background: 'var(--bg-2)', borderRadius: 6, padding: '6px 8px', textAlign: 'center' }}>
+          <div style={{ fontSize: 9, color: 'var(--text-3)', marginBottom: 1 }}>RSI ~</div>
+          <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-mono)', color: card.rsiEstimate >= 70 ? 'var(--amber)' : card.rsiEstimate <= 30 ? '#38bdf8' : 'var(--text-1)' }}>
             {card.rsiEstimate}
           </div>
         </div>
-        <div style={{ background: 'var(--bg-2)', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
-          <div style={{ fontSize: 10, color: 'var(--text-3)', marginBottom: 2 }}>Vol Ratio</div>
-          <div style={{ fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-mono)', color: card.volumeRatio >= 2 ? 'var(--amber)' : 'var(--text-1)' }}>
+        <div style={{ background: 'var(--bg-2)', borderRadius: 6, padding: '6px 8px', textAlign: 'center' }}>
+          <div style={{ fontSize: 9, color: 'var(--text-3)', marginBottom: 1 }}>Vol Ratio</div>
+          <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-mono)', color: card.volumeRatio >= 2 ? 'var(--amber)' : 'var(--text-1)' }}>
             {card.volumeRatio.toFixed(1)}×
           </div>
         </div>
@@ -162,9 +164,9 @@ function SignalCard({ card }: { card: RadarSignalCard }) {
 
       {/* Confidence */}
       <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-          <span style={{ fontSize: 11, color: 'var(--text-3)' }}>Confidence</span>
-          <span style={{ fontSize: 11, fontWeight: 700, color: directionColor(card.direction) }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+          <span style={{ fontSize: 10, color: 'var(--text-3)' }}>Confidence</span>
+          <span style={{ fontSize: 10, fontWeight: 700, color: directionColor(card.direction) }}>
             {card.direction.toUpperCase()}
           </span>
         </div>
@@ -173,7 +175,7 @@ function SignalCard({ card }: { card: RadarSignalCard }) {
 
       {/* Entry / Stop / Target */}
       {(card.entryZone || card.stopLoss || card.target) && (
-        <div style={{ display: 'flex', background: 'var(--bg-2)', borderRadius: 10, padding: '10px 0', gap: 0 }}>
+        <div style={{ display: 'flex', background: 'var(--bg-2)', borderRadius: 8, padding: '8px 0', gap: 0 }}>
           <PriceLevel label="Entry"    value={card.entryZone}  color="var(--text-1)" />
           <div style={{ width: 1, background: 'var(--border)' }} />
           <PriceLevel label="Stop"     value={card.stopLoss}   color="var(--red)" />
@@ -183,20 +185,20 @@ function SignalCard({ card }: { card: RadarSignalCard }) {
       )}
 
       {/* Why now */}
-      <div style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.55, background: 'var(--bg-2)', padding: '10px 12px', borderRadius: 8 }}>
+      <div style={{ fontSize: 11, color: 'var(--text-2)', lineHeight: 1.4, background: 'var(--bg-2)', padding: '8px 10px', borderRadius: 6, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
         {card.whyNow}
       </div>
 
       {/* Action */}
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
         <Link
           href={`/stocks/${encodeURIComponent(card.symbol)}`}
           className="btn btn-primary"
-          style={{ flex: 1, fontSize: 12, padding: '9px 12px', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: 6 }}
+          style={{ flex: 1, fontSize: 11, padding: '6px 8px', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: 4 }}
         >
-          Full Analysis <ArrowRight style={{ width: 12, height: 12 }} />
+          Full Analysis <ArrowRight style={{ width: 10, height: 10 }} />
         </Link>
-        <div style={{ fontSize: 10, color: 'var(--text-3)', alignSelf: 'center', minWidth: 60 }}>
+        <div style={{ fontSize: 9, color: 'var(--text-3)', alignSelf: 'center', whiteSpace: 'nowrap' }}>
           Vol {formatLargeNumber(card.volume)}
         </div>
       </div>

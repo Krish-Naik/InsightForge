@@ -18,10 +18,63 @@ import {
 } from 'lucide-react';
 import {
   marketAPI,
-  type MarketSummary, type SectorOverview, type NewsItem, type TodayDesk,
+  type MarketSummary, type SectorOverview, type NewsItem, type TodayDesk, type CapFilter,
 } from '@/lib/api';
 import { formatCurrency, formatLargeNumber, formatPercent, formatTimeAgo } from '@/lib/format';
 import { useMarketStream } from '@/lib/hooks/useMarketStream';
+import { useChart } from '@/lib/contexts/ChartContext';
+import type { Index } from '@/lib/api';
+
+// ── Index card ────────────────────────────────────────────────────────────
+function IndexCard({ idx }: { idx: Index }) {
+  const { openChart } = useChart();
+
+  return (
+    <div 
+      onClick={() => openChart(idx.rawSymbol)}
+      className="index-card" 
+      style={{ 
+        minWidth: 220, 
+        flexShrink: 0,
+        padding: '16px 18px',
+        background: 'var(--surface)',
+        borderRadius: 14,
+        border: `1px solid ${idx.changePercent >= 0 ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
+        boxShadow: 'var(--shadow)',
+        cursor: 'pointer',
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>{idx.shortName}</span>
+        <span style={{ fontSize: 12, fontWeight: 800, color: idx.changePercent >= 0 ? 'var(--green)' : 'var(--red)' }}>
+          {idx.changePercent >= 0 ? '▲' : '▼'} {formatPercent(idx.changePercent)}
+        </span>
+      </div>
+      <div style={{ fontSize: 24, fontWeight: 800, fontFamily: 'var(--font-mono)', marginBottom: 10 }}>
+        {formatCurrency(idx.price)}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-3)' }}>
+        <span>Day Low</span>
+        <span>Day High</span>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-mono)' }}>
+        <span>{formatCurrency(idx.dayLow)}</span>
+        <span>{formatCurrency(idx.dayHigh)}</span>
+      </div>
+      <div style={{ marginTop: 12, height: 4, background: 'var(--bg-2)', borderRadius: 2, overflow: 'hidden', position: 'relative' }}>
+        <div style={{ 
+          position: 'absolute',
+          left: 0, 
+          top: 0, 
+          height: '100%', 
+          width: '50%',
+          background: idx.changePercent >= 0 ? 'var(--green)' : 'var(--red)',
+          borderRadius: 2,
+        }} />
+      </div>
+    </div>
+  );
+}
 
 // ── Skeleton ──────────────────────────────────────────────────────────────────
 function SkeletonBlock({ h = 120, className = '' }: { h?: number; className?: string }) {
@@ -50,13 +103,12 @@ function HeatmapCell({ sector }: { sector: SectorOverview }) {
   const pct    = sector.averageChangePercent;
   const abs    = Math.min(Math.abs(pct), 3);
   const alpha  = 0.15 + (abs / 3) * 0.55;
-  const bg     = pct >= 0 ? `rgba(34,197,94,${alpha})` : `rgba(239,68,68,${alpha})`;
   const border = pct >= 0 ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)';
 
   return (
     <div style={{
-      background: bg, border: `1px solid ${border}`, borderRadius: 10,
-      padding: '12px 14px', cursor: 'default',
+      background: 'var(--surface)', border: `1px solid ${border}`, borderRadius: 10,
+      padding: '12px 14px', cursor: 'default', boxShadow: 'var(--shadow)',
     }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-1)', marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
         {sector.sector}
@@ -130,6 +182,9 @@ export default function TodayPage() {
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [capFilter, setCapFilter] = useState<CapFilter>('all');
+  const [movers, setMovers] = useState<{ gainers: any[]; losers: any[]; volumeLeaders: any[] } | null>(null);
+  const [moversLoading, setMoversLoading] = useState(false);
 
   const { connected } = useMarketStream(true);
 
@@ -161,7 +216,23 @@ export default function TodayPage() {
     return () => window.clearInterval(t);
   }, [load]);
 
-  // Derived breadth
+  const loadMovers = useCallback(async () => {
+    setMoversLoading(true);
+    try {
+      const data = await marketAPI.getMovers(capFilter);
+      setMovers(data);
+    } catch (e) {
+      console.error('Failed to load movers:', e);
+    } finally {
+      setMoversLoading(false);
+    }
+  }, [capFilter]);
+
+  useEffect(() => {
+    void loadMovers();
+  }, [loadMovers]);
+
+  // Derived breadthth
   const advancers  = summary ? summary.gainers.filter(q => q.changePercent > 0).length : 0;
   const decliners  = summary ? summary.losers.filter(q => q.changePercent < 0).length  : 0;
   const unchanged  = summary ? (summary.mostActive.length - advancers - decliners) : 0;
@@ -258,6 +329,29 @@ export default function TodayPage() {
         )}
       </div>
 
+      {/* ── Index board ──────────────────────────────────────────────────────── */}
+      <div className="full-width-section">
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div className="panel-header">
+            <div className="panel-title" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15 }}>
+              <Activity style={{ width: 18, height: 18 }} /> Index Board
+            </div>
+            <span style={{ fontSize: 12, color: 'var(--text-3)' }}>Nifty, Sensex, Sectoral</span>
+          </div>
+          {loading ? (
+            <div style={{ padding: 24 }}><SkeletonBlock h={120} /></div>
+          ) : (
+            <div style={{ overflowX: 'auto', padding: '16px 16px 20px 16px' }}>
+              <div style={{ display: 'flex', gap: 14, minWidth: 'max-content' }}>
+                {(summary?.indices || []).map(idx => (
+                  <IndexCard key={idx.symbol} idx={idx} />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* ── Market narrative ─────────────────────────────────────────────────── */}
       {loading ? (
         <SkeletonBlock h={100} />
@@ -277,42 +371,6 @@ export default function TodayPage() {
           </div>
         </div>
       )}
-
-      {/* ── Index board ──────────────────────────────────────────────────────── */}
-      <div className="full-width-section">
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div className="panel-header">
-            <div className="panel-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Activity style={{ width: 15, height: 15 }} /> Index Board
-            </div>
-            <span style={{ fontSize: 11, color: 'var(--text-3)' }}>Nifty, Sensex, Sectoral</span>
-          </div>
-          {loading ? (
-            <div style={{ padding: 16 }}><SkeletonBlock h={80} /></div>
-          ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <div style={{ display: 'flex', gap: 12, padding: '14px 16px', minWidth: 'max-content' }}>
-                {(summary?.indices || []).map(idx => (
-                  <div key={idx.symbol} className="index-card" style={{ minWidth: 160, flexShrink: 0 }}>
-                    <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 4 }}>{idx.shortName}</div>
-                    <div style={{ fontSize: 17, fontWeight: 800, fontFamily: 'var(--font-mono)' }}>
-                      {formatCurrency(idx.price)}
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
-                      <span style={{ fontSize: 11, color: 'var(--text-3)' }}>
-                        {formatCurrency(idx.dayLow)} — {formatCurrency(idx.dayHigh)}
-                      </span>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: idx.changePercent >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                        {formatPercent(idx.changePercent)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
 
       {/* ── Sector heatmap ───────────────────────────────────────────────────── */}
       <div className="full-width-section">
@@ -346,10 +404,29 @@ export default function TodayPage() {
             <div className="panel-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <TrendingUp style={{ width: 15, height: 15 }} /> Tape Activity
             </div>
-            <span style={{ fontSize: 11, color: 'var(--text-3)' }}>Gainers · Losers · Active</span>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {(['all', 'largecap', 'midcap', 'smallcap'] as CapFilter[]).map(cap => (
+                <button
+                  key={cap}
+                  onClick={() => setCapFilter(cap)}
+                  style={{
+                    fontSize: 10,
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    border: 'none',
+                    background: capFilter === cap ? 'var(--primary)' : 'var(--bg-2)',
+                    color: capFilter === cap ? 'white' : 'var(--text-2)',
+                    cursor: 'pointer',
+                    fontWeight: 600,
+                  }}
+                >
+                  {cap === 'all' ? 'All' : cap === 'largecap' ? 'Large' : cap === 'midcap' ? 'Mid' : 'Small'}
+                </button>
+              ))}
+            </div>
           </div>
           <div style={{ padding: 16 }}>
-            {loading ? (
+            {(loading || moversLoading) ? (
               <div className="grid-fit-220">{[1,2,3].map(i => <SkeletonBlock key={i} h={200} />)}</div>
             ) : (
               <div className="grid-fit-220">
@@ -359,7 +436,7 @@ export default function TodayPage() {
                     <TrendingUp style={{ width: 13, height: 13 }} /> Top Gainers
                   </div>
                   <div className="stack-8">
-                    {(summary?.gainers || []).slice(0, 10).map(q => (
+                    {(movers?.gainers || []).map(q => (
                       <QuoteRow key={q.symbol} symbol={q.symbol} name={q.name} price={q.price} changePercent={q.changePercent} />
                     ))}
                   </div>
@@ -370,7 +447,7 @@ export default function TodayPage() {
                     <TrendingDown style={{ width: 13, height: 13 }} /> Top Losers
                   </div>
                   <div className="stack-8">
-                    {(summary?.losers || []).slice(0, 10).map(q => (
+                    {(movers?.losers || []).map(q => (
                       <QuoteRow key={q.symbol} symbol={q.symbol} name={q.name} price={q.price} changePercent={q.changePercent} />
                     ))}
                   </div>
@@ -379,10 +456,9 @@ export default function TodayPage() {
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, fontSize: 12, fontWeight: 700, color: 'var(--text-2)' }}>
                     <Zap style={{ width: 13, height: 13 }} /> Volume Leaders
-                    <span style={{ fontSize: 10, color: 'var(--text-3)', fontWeight: 400, marginLeft: 4 }}>(no signals)</span>
                   </div>
                   <div className="stack-8">
-                    {volumeLeaders.map(q => (
+                    {(movers?.volumeLeaders || []).map(q => (
                       <Link key={q.symbol} href={`/stocks/${encodeURIComponent(q.symbol)}`} style={{ textDecoration: 'none', display: 'block' }}>
                         <div className="list-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div>

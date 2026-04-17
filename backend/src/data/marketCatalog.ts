@@ -55,6 +55,49 @@ export const MARKET_INDICES: MarketIndexDefinition[] = [
     aliases: ['BANKNIFTY'],
   },
   {
+    name: 'S&P BSE SENSEX',
+    shortName: 'SENSEX',
+    yahooSymbol: '^BSESN',
+    upstoxSymbol: 'S&P BSE SENSEX',
+  },
+  {
+    name: 'NIFTY 100',
+    shortName: 'NIFTY 100',
+    yahooSymbol: '^CNX100',
+    upstoxSymbol: 'NIFTY 100',
+  },
+  {
+    name: 'NIFTY 200',
+    shortName: 'NIFTY 200',
+    yahooSymbol: '^CNX200',
+    upstoxSymbol: 'NIFTY 200',
+  },
+  {
+    name: 'NIFTY MIDCAP 100',
+    shortName: 'MIDCAP 100',
+    yahooSymbol: 'CNXMIDCAP.NS',
+    upstoxSymbol: 'NIFTY MIDCAP 100',
+    aliases: ['NIFTY MIDCAP 100'],
+  },
+  {
+    name: 'NIFTY SMALLCAP 100',
+    shortName: 'SMALLCAP 100',
+    yahooSymbol: '^CNXSC',
+    upstoxSymbol: 'NIFTY SMALLCAP 100',
+  },
+  {
+    name: 'NIFTY PSU BANK',
+    shortName: 'PSU BANK',
+    yahooSymbol: '^CNXPSUBANK',
+    upstoxSymbol: 'NIFTY PSU BANK',
+  },
+  {
+    name: 'NIFTY FINANCIAL SERVICES',
+    shortName: 'FIN SERVICE',
+    yahooSymbol: '^CNXFIN',
+    upstoxSymbol: 'NIFTY FINANCIAL SERVICES',
+  },
+  {
     name: 'NIFTY IT',
     shortName: 'IT',
     yahooSymbol: '^CNXIT',
@@ -97,23 +140,16 @@ export const MARKET_INDICES: MarketIndexDefinition[] = [
     upstoxSymbol: 'NIFTY REALTY',
   },
   {
-    name: 'NIFTY PSU BANK',
-    shortName: 'PSU BANK',
-    yahooSymbol: '^CNXPSUBANK',
-    upstoxSymbol: 'NIFTY PSU BANK',
-  },
-  {
     name: 'NIFTY INFRA',
     shortName: 'INFRA',
     yahooSymbol: '^CNXINFRA',
     upstoxSymbol: 'NIFTY INFRA',
   },
   {
-    name: 'NIFTY MIDCAP',
-    shortName: 'MIDCAP',
-    yahooSymbol: '^CNXMIDCP',
-    upstoxSymbol: 'NIFTY MIDCAP 100',
-    aliases: ['NIFTY MIDCAP 100'],
+    name: 'INDIA VIX',
+    shortName: 'INDIA VIX',
+    yahooSymbol: '^INDIAVIX',
+    upstoxSymbol: 'INDIA VIX',
   },
 ];
 

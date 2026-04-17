@@ -171,6 +171,53 @@ export class MarketDataService {
     return [];
   }
 
+  static async getMoversByCap(cap: string): Promise<{ gainers: Quote[]; losers: Quote[]; volumeLeaders: Quote[] }> {
+    const summary = await this.getMarketSummary();
+    
+    let allQuotes = [...summary.gainers, ...summary.losers, ...summary.mostActive]
+      .filter(q => q.price > 0);
+    
+    const LARGE_PRICE = 500;
+    const MID_PRICE = 100;
+    
+    let filtered: Quote[];
+    switch (cap) {
+      case 'largecap':
+        filtered = allQuotes.filter(q => q.price >= LARGE_PRICE);
+        break;
+      case 'midcap':
+        filtered = allQuotes.filter(q => q.price >= MID_PRICE && q.price < LARGE_PRICE);
+        break;
+      case 'smallcap':
+        filtered = allQuotes.filter(q => q.price < MID_PRICE);
+        break;
+      default:
+        filtered = allQuotes;
+    }
+    
+    if (filtered.length < 10) {
+      filtered = allQuotes;
+    }
+    
+    const topGainers = [...filtered]
+      .sort((a, b) => (b.changePercent || 0) - (a.changePercent || 0))
+      .slice(0, 10);
+    
+    const topLosers = [...filtered]
+      .sort((a, b) => (a.changePercent || 0) - (b.changePercent || 0))
+      .slice(0, 10);
+    
+    const topVolume = [...filtered]
+      .sort((a, b) => (b.volume || 0) - (a.volume || 0))
+      .slice(0, 10);
+    
+    return {
+      gainers: topGainers,
+      losers: topLosers,
+      volumeLeaders: topVolume,
+    };
+  }
+
   static async getHistoricalData(symbol: string, period = '1mo') {
     const normalizedSymbol = symbol.trim().toUpperCase();
 
