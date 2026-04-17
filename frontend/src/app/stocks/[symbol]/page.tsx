@@ -19,6 +19,7 @@ export default function StockStoryPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState<'1y' | '2y' | '5y' | '10y'>('2y');
+  const [chartPeriod, setChartPeriod] = useState<'1y' | '2y' | '5y'>('1y');
 
   const loadResearch = useCallback(async () => {
     if (!symbol) return;
@@ -71,11 +72,6 @@ export default function StockStoryPage() {
         description={story?.summary || profile?.narrative || 'Narrative-first research page built to explain the setup before drowning the user in indicators.'}
         actions={
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            {story?.generatedAt ? <span className="topbar-pill">Updated {formatTimeAgo(story.generatedAt)} • {formatIST(new Date(story.generatedAt))}</span> : null}
-            <Link href="/radar" className="btn btn-ghost">
-              <ArrowLeft style={{ width: 14, height: 14 }} />
-              Back to radar
-            </Link>
             <button onClick={() => void loadResearch()} disabled={refreshing} className="btn btn-primary">
               <RefreshCw style={{ width: 14, height: 14 }} className={refreshing ? 'anim-spin' : ''} />
               Refresh story
@@ -100,6 +96,39 @@ export default function StockStoryPage() {
             <MetricTile label="Momentum score" value={analytics ? formatNumber(analytics.momentumScore) : '—'} tone="positive" icon={Sparkles} subtext={analytics?.trend || 'neutral'} />
             <MetricTile label="Story confidence" value={story ? `${story.whyMoving.confidence}` : analytics?.rsi14 != null ? formatNumber(analytics.rsi14) : '—'} tone="warning" icon={BrainCircuit} subtext={analytics?.volumeRatio != null ? `Vol ${analytics.volumeRatio.toFixed(1)}x` : 'Volume ratio unavailable'} />
           </div>
+
+          <SectionCard title="Chart" subtitle="Price history and trends" icon={Waves}>
+            <div className="stack-16">
+              <div className="tab-group">
+                {[
+                  { id: '1y', label: '1Y' },
+                  { id: '2y', label: '2Y' },
+                  { id: '5y', label: '5Y' },
+                ].map((entry) => (
+                  <button key={entry.id} type="button" onClick={() => setChartPeriod(entry.id as '1y' | '2y' | '5y')} className={`tab ${chartPeriod === entry.id ? 'tab-active' : ''}`}>
+                    {entry.label}
+                  </button>
+                ))}
+              </div>
+              <HistoricalSeriesChart symbol={profile.symbol} period={chartPeriod} variant="line" height={360} />
+            </div>
+          </SectionCard>
+
+          {story && (
+            <SectionCard title="Price Structure" subtitle="Triggers, invalidation, and the chart in one compact frame" icon={Waves}>
+              <div className="stack-16">
+                <div className="grid-fit-180">
+                  <MetricTile label="Trigger" value={story.setupMap.trigger} tone="primary" />
+                  <MetricTile label="Invalidation" value={story.setupMap.invalidation} tone="negative" />
+                  <MetricTile label="Support" value={story.setupMap.support} tone="positive" />
+                  <MetricTile label="Resistance" value={story.setupMap.resistance} tone="warning" />
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <TrendBadge tone={stageTone}>{story.setupMap.stage}</TrendBadge>
+                </div>
+              </div>
+            </SectionCard>
+          )}
 
           <div className="workbench-grid">
             <div className="workbench-column">
@@ -140,37 +169,6 @@ export default function StockStoryPage() {
                   </div>
                 ) : (
                   <EmptyPanel title="Narrative unavailable" description="The stock story is waiting for enough context to explain the move cleanly." icon={BrainCircuit} />
-                )}
-              </SectionCard>
-
-              <SectionCard title="Price Structure" subtitle="Triggers, invalidation, and the chart in one compact frame" icon={Waves}>
-                {story ? (
-                  <div className="stack-16">
-                    <div className="grid-fit-180">
-                      <MetricTile label="Trigger" value={story.setupMap.trigger} tone="primary" />
-                      <MetricTile label="Invalidation" value={story.setupMap.invalidation} tone="negative" />
-                      <MetricTile label="Support" value={story.setupMap.support} tone="positive" />
-                      <MetricTile label="Resistance" value={story.setupMap.resistance} tone="warning" />
-                    </div>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      <TrendBadge tone={stageTone}>{story.setupMap.stage}</TrendBadge>
-                    </div>
-                  <div className="tab-group">
-                    {[
-                      { id: '1y', label: '1Y' },
-                      { id: '2y', label: '2Y' },
-                      { id: '5y', label: '5Y' },
-                      { id: '10y', label: '10Y' },
-                    ].map((entry) => (
-                      <button key={entry.id} type="button" onClick={() => setPeriod(entry.id as '1y' | '2y' | '5y' | '10y')} className={`tab ${period === entry.id ? 'tab-active' : ''}`}>
-                        {entry.label}
-                      </button>
-                    ))}
-                  </div>
-                  <HistoricalSeriesChart symbol={profile.symbol} period={period} variant="line" height={360} />
-                </div>
-                ) : (
-                  <EmptyPanel title="Setup map unavailable" description="Key levels will appear here once the stock story can classify the setup." icon={ShieldAlert} />
                 )}
               </SectionCard>
 
