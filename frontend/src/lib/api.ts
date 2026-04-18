@@ -643,4 +643,96 @@ export const portfolioAPI = {
     api.delete(`/portfolios/${id}/holdings/${holdingId}`),
 };
 
+export interface FinancialData {
+  symbol: string;
+  companyName: string;
+  year: number;
+  quarter: string;
+  consolidationType: string;
+  revenueFromOperations: number | null;
+  profitLossForPeriod: number | null;
+  totalAssets: number | null;
+  totalEquity: number | null;
+  totalLiabilities: number | null;
+  eps: number | null;
+  bookValuePerShare: number | null;
+  [key: string]: any;
+}
+
+export interface FinancialMetrics {
+  symbol: string;
+  companyName: string;
+  latest: {
+    revenueFromOperations: number | null;
+    profitAfterTax: number | null;
+    totalAssets: number | null;
+    totalEquity: number | null;
+    eps: number | null;
+    bookValuePerShare: number | null;
+    roe: number | null;
+    roce: number | null;
+    roa: number | null;
+    netMargin: number | null;
+    grossMargin: number | null;
+    debtToEquity: number | null;
+    currentRatio: number | null;
+    quickRatio: number | null;
+    interestCoverage: number | null;
+    assetTurnover: number | null;
+    dividendPerShare: number | null;
+    dividendYield: number | null;
+    dividendPayoutRatio: number | null;
+    operatingCashFlow: number | null;
+    freeCashFlow: number | null;
+    cashConversion: number | null;
+    revenueGrowth: number | null;
+    profitGrowth: number | null;
+    [key: string]: any;
+  } | null;
+  annual: {
+    totalRevenue: number | null;
+    totalProfit: number | null;
+    avgRoe: number | null;
+    avgRoce: number | null;
+    avgNetMargin: number | null;
+  };
+  quarters: any[];
+}
+
+export const financialsAPI = {
+  getFinancials: (symbol: string, options?: { year?: number; quarter?: string; consolidationType?: string }): Promise<FinancialData[]> =>
+    api.get(`/financials/${encodeURIComponent(symbol)}`, { params: options }),
+  getLatestFinancials: (symbol: string, consolidationType?: string): Promise<FinancialData | null> =>
+    api.get(`/financials/${encodeURIComponent(symbol)}/latest`, { params: { consolidationType } }),
+  getMetrics: (symbol: string, options?: { year?: number; consolidationType?: string }): Promise<FinancialMetrics> =>
+    api.get(`/financials/metrics/${encodeURIComponent(symbol)}`, { params: options }),
+  getQuarterlyMetrics: (symbol: string, year: number, quarter: string, consolidationType?: string): Promise<any> =>
+    api.get(`/financials/metrics/${encodeURIComponent(symbol)}/${year}/${quarter}`, { params: { consolidationType } }),
+  searchByMetrics: (criteria: {
+    minRoe?: number;
+    maxRoe?: number;
+    minRoce?: number;
+    maxRoce?: number;
+    minNetMargin?: number;
+    maxNetMargin?: number;
+    minDebtToEquity?: number;
+    maxDebtToEquity?: number;
+    minCurrentRatio?: number;
+    minRevenue?: number;
+    limit?: number;
+  }): Promise<{ symbol: string; companyName: string; [key: string]: any }[]> =>
+    api.get('/financials/search', { params: criteria }),
+  getScreenerData: (payload: {
+    symbols?: string[];
+    filters?: Array<{ metric: string; operator: string; value: string }>;
+    limit?: number;
+  }): Promise<{ symbol: string; companyName: string; [key: string]: any }[]> =>
+    api.post('/financials/screener', payload),
+  getSummary: (): Promise<{
+    totalRecords: number;
+    byQuarter: Record<string, number>;
+    byConsolidation: Record<string, number>;
+  }> => api.get('/financials/summary'),
+};
+
 export default api;

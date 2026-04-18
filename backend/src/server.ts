@@ -17,6 +17,7 @@ import watchlistRoutes from './routes/watchlist.js';
 import portfolioRoutes from './routes/portfolio.js';
 import marketRoutes    from './routes/market.js';
 import cacheRoutes     from './routes/cache.js';
+import financialRoutes from './routes/financials.js';
 
 const app: Express = express();
 
@@ -186,6 +187,7 @@ app.use('/api/watchlists', watchlistRoutes);
 app.use('/api/portfolios', portfolioRoutes);
 app.use('/api/market',     marketRoutes);
 app.use('/api/cache',      cacheRoutes);
+app.use('/api/financials', financialRoutes);
 
 // ── Batch worker ────────────────────────────────────────────────────────────
 startBatchWorker(60_000);
