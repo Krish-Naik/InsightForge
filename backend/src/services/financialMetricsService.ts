@@ -92,6 +92,32 @@ function calculateRoce(
   return (ebit / capitalEmployed) * 100;
 }
 
+function calculateRoeWithFallback(
+  profitLossForPeriod: number | null,
+  equityShareCapital: number | null,
+  otherEquity: number | null,
+  totalEquity: number | null
+): number | null {
+  const equity = totalEquity ?? ((equityShareCapital ?? 0) + (otherEquity ?? 0));
+  if (profitLossForPeriod === null || equity === 0) return null;
+  return (profitLossForPeriod / equity) * 100;
+}
+
+function calculateRoceWithFallback(
+  profitLossBeforeTax: number | null,
+  financeCosts: number | null,
+  totalAssets: number | null,
+  totalCurrentLiabilities: number | null,
+  totalNonCurrentLiabilities: number | null
+): number | null {
+  if (totalAssets === null || totalAssets === 0) return null;
+  const ebit = (profitLossBeforeTax ?? 0) + (financeCosts ?? 0);
+  const liabilities = (totalCurrentLiabilities ?? 0) + (totalNonCurrentLiabilities ?? 0);
+  const capitalEmployed = totalAssets - liabilities;
+  if (capitalEmployed === 0 || ebit === 0) return null;
+  return (ebit / capitalEmployed) * 100;
+}
+
 function calculateRoa(netProfit: number | null, totalAssets: number | null): number | null {
   if (netProfit === null || totalAssets === null || totalAssets === 0) return null;
   return (netProfit / totalAssets) * 100;
@@ -232,52 +258,68 @@ export async function computeMetrics(
   year?: number,
   consolidationType: 'Standalone' | 'Consolidated' = 'Standalone'
 ): Promise<StockMetricsSummary | null> {
-  const query: any = { symbol: symbol.toUpperCase(), consolidationType };
-  if (year) query.year = year;
+  try {
+    const query: any = { symbol: symbol.toUpperCase(), consolidationType };
+    if (year) query.year = year;
 
-  const financials = await QuarterlyFinancial.find(query)
-    .sort({ year: -1, quarter: -1 })
-    .lean();
+    const financials = await QuarterlyFinancial.find(query)
+      .sort({ year: -1, quarter: -1 })
+      .lean();
 
-  if (financials.length === 0) {
-    return null;
-  }
+    if (financials.length === 0) {
+      logger.warn(`No MongoDB financials for ${symbol}, trying screener.in fallback`);
+      try {
+        const { fetchScreenerFinancials } = await import('./screenerFinancialService.js');
+        const scrapedData = await fetchScreenerFinancials(symbol);
+        if (scrapedData && scrapedData.quarters && scrapedData.quarters.length > 0) {
+          logger.info(`Got ${scrapedData.quarters.length} quarters from screener.in for ${symbol}`);
+          return scrapedData;
+        }
+      } catch (scrapeErr) {
+        logger.warn(`Screener fallback failed for ${symbol}: ${(scrapeErr as Error).message}`);
+      }
+      return null;
+    }
 
-  const companyName = financials[0].companyName;
-  const quarters: FinancialMetrics[] = [];
+    const companyName = financials[0].companyName;
+    const quarters: FinancialMetrics[] = [];
 
-  for (let i = 0; i < financials.length; i++) {
-    const q = financials[i];
-    const prev = financials[i + 1] || null;
+    for (let i = 0; i < financials.length; i++) {
+      const q = financials[i];
+      const prev = financials[i + 1] || null;
 
-    const revenue = q.revenueFromOperations;
-    const netProfit = q.profitLossForPeriod;
-    const totalAssets = q.totalAssets;
-    const totalEquity = q.totalEquity;
-    const totalLiabilities = q.totalLiabilities;
-    const currentAssets = q.totalCurrentAssets;
-    const currentLiabilities = q.totalCurrentLiabilities;
-    const borrowings = (q.borrowingsCurrent || 0) + (q.borrowingsNonCurrent || 0);
-    const financeCosts = q.financeCosts;
-    const inventories = q.inventories;
-    const tradeReceivables = q.tradeReceivablesCurrent;
-    const tradePayables = q.tradePayablesCurrent;
-    const cogs = q.costOfMaterialsConsumed;
-    const basicEps = q.basicEarningsLossPerShareFromContinuingAndDiscontinuedOperations;
-    const faceValue = q.faceValuePerShare;
-    const sharesOutstanding = q.numberOfSharesOutstanding;
-    const dividend = q.dividendPerShare;
-    const operatingCashFlow = q.cashFlowsFromUsedInOperatingActivities;
-    const freeCashFlow = q.freeCashFlow;
+      const revenue = q.revenueFromOperations;
+      const netProfit = q.profitLossForPeriod;
+      const profitBeforeTax = q.profitLossBeforeTax;
+      const totalAssets = q.totalAssets;
+      const totalEquity = q.totalEquity;
+      const totalLiabilities = q.totalLiabilities;
+      const currentAssets = q.totalCurrentAssets;
+      const currentLiabilities = q.totalCurrentLiabilities;
+      const borrowings = (q.borrowingsCurrent || 0) + (q.borrowingsNonCurrent || 0);
+      const financeCosts = q.financeCosts;
+      const inventories = q.inventories;
+      const tradeReceivables = q.tradeReceivablesCurrent;
+      const tradePayables = q.tradePayablesCurrent;
+      const cogs = q.costOfMaterialsConsumed;
+      const basicEps = q.basicEarningsLossPerShareFromContinuingAndDiscontinuedOperations;
+      const faceValue = q.faceValuePerShare;
+      const sharesOutstanding = q.numberOfSharesOutstanding;
+      const dividend = q.dividendPerShare;
+      const operatingCashFlow = q.cashFlowsFromUsedInOperatingActivities;
+      const freeCashFlow = q.freeCashFlow;
+      const equityShareCapital = q.equityShareCapital;
+      const otherEquity = q.otherEquity;
+      const totalNonCurrentLiabilities = q.totalNonCurrentLiabilities;
 
-    const revenuePrev = prev?.revenueFromOperations;
-    const profitPrev = prev?.profitLossForPeriod;
-    const assetsPrev = prev?.totalAssets;
-    const equityPrev = prev?.totalEquity;
-    const epsPrev = prev?.basicEarningsLossPerShareFromContinuingAndDiscontinuedOperations;
+      const revenuePrev = prev?.revenueFromOperations;
+      const profitPrev = prev?.profitLossForPeriod;
+      const assetsPrev = prev?.totalAssets;
+      const equityPrev = prev?.totalEquity;
+      const epsPrev = prev?.basicEarningsLossPerShareFromContinuingAndDiscontinuedOperations;
 
-    const bookValuePerShare = calculateBookValuePerShare(totalEquity, sharesOutstanding);
-    const ebit = (q.profitLossBeforeTax || 0) + (financeCosts || 0);
+      const bookValuePerShare = calculateBookValuePerShare(totalEquity, sharesOutstanding);
+      const ebit = (q.profitLossBeforeTax || 0) + (financeCosts || 0);
 
     const metrics: FinancialMetrics = {
       symbol: q.symbol,
@@ -298,12 +340,20 @@ export async function computeMetrics(
       bookValuePerShare: bookValuePerShare,
       faceValuePerShare: faceValue,
 
-      roe: calculateRoe(netProfit, totalEquity),
+      roe: (() => {
+        const primary = calculateRoe(netProfit, totalEquity);
+        if (primary !== null) return primary;
+        return calculateRoeWithFallback(netProfit, equityShareCapital, otherEquity, totalEquity);
+      })(),
       roeYoYGrowth: calculateYoYGrowth(
         calculateRoe(netProfit, totalEquity),
         calculateRoe(profitPrev, equityPrev)
       ),
-      roce: calculateRoce(ebit, totalAssets, currentLiabilities),
+      roce: (() => {
+        const primary = calculateRoce(ebit, totalAssets, currentLiabilities);
+        if (primary !== null) return primary;
+        return calculateRoceWithFallback(profitBeforeTax, financeCosts, totalAssets, currentLiabilities, totalNonCurrentLiabilities);
+      })(),
       roceYoYGrowth: calculateYoYGrowth(
         calculateRoce(ebit, totalAssets, currentLiabilities),
         calculateRoce(
@@ -408,6 +458,10 @@ export async function computeMetrics(
     },
     quarters,
   };
+  } catch (error) {
+    logger.error(`Error in computeMetrics for ${symbol}: ${(error as Error).message}`, { stack: (error as Error).stack });
+    throw error;
+  }
 }
 
 export async function computeQuarterlyMetrics(

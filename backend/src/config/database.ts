@@ -5,8 +5,13 @@ import { logger } from '../utils/logger.js';
 let dbConnected = false;
 
 export const connectDB = async () => {
-  try {
-    const conn = await mongoose.connect(config.mongoUri);
+  try {    
+    const connOptions: any = {
+      serverSelectionTimeoutMS: 30000,
+      socketTimeoutMS: 30000,
+    };
+
+    const conn = await mongoose.connect(config.mongoUri, connOptions);
     dbConnected = true;
     logger.info(`MongoDB connected: ${conn.connection.host}`);
 
@@ -20,9 +25,13 @@ export const connectDB = async () => {
       dbConnected = false;
     });
 
+    conn.connection.on('reconnected', () => {
+      logger.info('MongoDB reconnected');
+      dbConnected = true;
+    });
+
     return conn;
   } catch (err) {
-    logger.warn(`MongoDB not available — market data routes will still work, but auth/watchlists/portfolios require MongoDB`);
     dbConnected = false;
   }
 };

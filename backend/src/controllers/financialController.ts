@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import { QuarterlyFinancial } from '../models/QuarterlyFinancial.js';
 import { computeMetrics, computeQuarterlyMetrics, searchStocksByMetrics, type StockMetricsSummary, type FinancialMetrics } from '../services/financialMetricsService.js';
 import { importAllQuarterlyFinancials, getFinancialSummary } from '../services/financialImportService.js';
@@ -53,17 +54,28 @@ export const financialController = {
 
   async getMetrics(req: Request, res: Response) {
     try {
-      const { symbol, year, consolidationType = 'Standalone' } = req.query;
+      const { symbol: pathSymbol } = req.params;
+      const { year, consolidationType = 'Standalone' } = req.query;
 
-      if (!symbol) {
+      if (!pathSymbol) {
         return res.status(400).json({ error: 'Symbol is required' });
       }
 
-      const metrics = await computeMetrics(
-        symbol as string,
+      const symbol = pathSymbol.toUpperCase();
+
+      let metrics = await computeMetrics(
+        symbol,
         year ? parseInt(year as string) : undefined,
-        consolidationType as 'Standalone' | 'Consolidated'
+        'Standalone'
       );
+
+      if (!metrics) {
+        metrics = await computeMetrics(
+          symbol,
+          year ? parseInt(year as string) : undefined,
+          'Consolidated'
+        );
+      }
 
       if (!metrics) {
         return res.status(404).json({ error: 'No financial data found for symbol' });
@@ -71,23 +83,24 @@ export const financialController = {
 
       res.json(metrics);
     } catch (error) {
-      logger.error(`Error getting metrics: ${(error as Error).message}`);
+      logger.error(`Error getting metrics: ${(error as Error).message}`, { stack: (error as Error).stack });
       res.status(500).json({ error: 'Failed to compute metrics' });
     }
   },
 
   async getQuarterlyMetrics(req: Request, res: Response) {
     try {
-      const { symbol, year, quarter, consolidationType = 'Standalone' } = req.query;
+      const { symbol: pathSymbol, year, quarter } = req.params;
+      const { consolidationType = 'Standalone' } = req.query;
 
-      if (!symbol || !year || !quarter) {
+      if (!pathSymbol || !year || !quarter) {
         return res.status(400).json({ error: 'Symbol, year, and quarter are required' });
       }
 
       const metrics = await computeQuarterlyMetrics(
-        symbol as string,
-        parseInt(year as string),
-        quarter as string,
+        pathSymbol,
+        parseInt(year),
+        quarter,
         consolidationType as 'Standalone' | 'Consolidated'
       );
 

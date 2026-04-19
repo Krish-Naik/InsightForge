@@ -598,6 +598,7 @@ export const marketAPI = {
   getStockStory: (symbol: string): Promise<StockStory> =>
     api.get(`/market/story/${encodeURIComponent(symbol)}`),
   getCatalog:       (): Promise<MarketCatalog>                    => api.get('/market/catalog'),
+  getPrimaryWatchlist: (): Promise<{ symbol: string; name: string }[]> => api.get('/market/primary-watchlist'),
   getNiftyStocks:   (): Promise<string[]>                          => api.get('/market/nifty-stocks'),
   getNews: (filter = 'all', category?: string, limit = 25): Promise<NewsItem[]> => {
     let url = `/market/news?filter=${filter}&limit=${limit}`;
@@ -708,6 +709,35 @@ export const financialsAPI = {
     api.get(`/financials/metrics/${encodeURIComponent(symbol)}`, { params: options }),
   getQuarterlyMetrics: (symbol: string, year: number, quarter: string, consolidationType?: string): Promise<any> =>
     api.get(`/financials/metrics/${encodeURIComponent(symbol)}/${year}/${quarter}`, { params: { consolidationType } }),
+  getInsight: (symbol: string): Promise<{
+    symbol: string;
+    summary: string;
+    keyInsights: string[];
+    quarterlyTrend: string;
+    strengths: string[];
+    concerns: string[];
+    verdict: string;
+    financialSummary: any;
+    generatedAt: string;
+  }> => api.get(`/financials/insight/${encodeURIComponent(symbol)}`),
+  getPriceInsight: (symbol: string): Promise<{
+    symbol: string;
+    summary: string;
+    priceDrivers: string[];
+    catalysts: string[];
+    forecast: string;
+    riskFactors: string[];
+    opportunity: string;
+    priceData: {
+      price: number;
+      change: number;
+      changePercent: number;
+      volume: number;
+      high52w: number;
+      low52w: number;
+    };
+    generatedAt: string;
+  }> => api.get(`/financials/price-insight/${encodeURIComponent(symbol)}`),
   searchByMetrics: (criteria: {
     minRoe?: number;
     maxRoe?: number;

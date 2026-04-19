@@ -255,6 +255,119 @@ export const marketController = {
     res.json({ success: true, data: getPublicMarketCatalog(), timestamp: new Date().toISOString() });
   }),
 
+  getPrimaryWatchlist: asyncHandler(async (_req: Request, res: Response) => {
+    setCacheHeaders(res, 3600, 7200);
+    const { MarketDataService } = await import('../services/marketDataService.js');
+    const { config } = await import('../config/index.js');
+    const axios = (await import('axios')).default;
+
+    const today = new Date().toISOString().split('T')[0];
+    const summary = await MarketDataService.getMarketSummary();
+    const gainers = summary?.gainers || [];
+    const losers = summary?.losers || [];
+    const mostActive = summary?.mostActive || [];
+
+    const largeCapCandidates = [...gainers, ...losers]
+      .filter(s => s.marketCap > 2000000000000)
+      .slice(0, 20);
+    const midCapCandidates = [...gainers, ...losers]
+      .filter(s => s.marketCap > 50000000000 && s.marketCap <= 2000000000000)
+      .slice(0, 15);
+    const smallCapCandidates = [...gainers, ...losers, ...mostActive]
+      .filter(s => s.marketCap <= 50000000000)
+      .slice(0, 15);
+
+    const largeCapSymbols = largeCapCandidates.slice(0, 8).map(s => s.symbol);
+    const midCapSymbols = midCapCandidates.slice(0, 6).map(s => s.symbol);
+    const smallCapSymbols = smallCapCandidates.slice(0, 6).map(s => s.symbol);
+
+    const allCandidates = [...largeCapSymbols, ...midCapSymbols, ...smallCapSymbols];
+    const quotes = await MarketDataService.getQuotes(allCandidates);
+
+    const stockData = quotes.map(q => ({
+      symbol: q.symbol,
+      name: q.name,
+      price: q.price,
+      changePercent: q.changePercent,
+      marketCap: q.marketCap,
+      volume: q.volume,
+      exchange: q.exchange,
+    }));
+
+    let primaryStocks: { symbol: string; name: string }[] = [
+      { symbol: 'RELIANCE', name: 'Reliance Industries Ltd' },
+      { symbol: 'TCS', name: 'Tata Consultancy Services Ltd' },
+      { symbol: 'HDFCBANK', name: 'HDFC Bank Ltd' },
+      { symbol: 'INFY', name: 'Infosys Ltd' },
+      { symbol: 'AXISBANK', name: 'Axis Bank Ltd' },
+      { symbol: 'SBIN', name: 'State Bank of India' },
+      { symbol: 'IRCTC', name: 'IRCTC Ltd' },
+      { symbol: 'COFORGE', name: 'Coforge Ltd' },
+      { symbol: 'ADANIENSOL', name: 'Adani Energy Solutions Ltd' },
+      { name: 'Delhivery Ltd', symbol: 'DELHIVERY' },
+    ];
+
+    if (config.ai.enabled && stockData.length > 0) {
+      try {
+        const prompt = {
+          date: today,
+          marketData: stockData.slice(0, 20).map(s => ({
+            symbol: s.symbol,
+            name: s.name,
+            price: s.price,
+            change: s.changePercent,
+            mcap: s.marketCap,
+            volume: s.volume,
+          })),
+        };
+
+        const response = await axios.post(
+          `${config.ai.baseUrl.replace(/\/$/, '')}/chat/completions`,
+          {
+            model: config.ai.model,
+            temperature: 0.3,
+            ...(config.ai.provider === 'groq' ? { response_format: { type: 'json_object' } } : {}),
+            messages: [
+              {
+                role: 'system',
+                content: 'You are a professional Indian stock market analyst. Select 10 prominent stocks for a primary watchlist based on current market performance. Return JSON only. No markdown.',
+              },
+              {
+                role: 'user',
+                content: `Select exactly 10 stocks for a primary watchlist: 4 large caps (market cap > ₹2T), 3 midcaps (₹50B-₹2T), 3 small caps (< ₹50B). Use today\'s market performance data to pick those with recent momentum, liquidity, and market presence. Return JSON array with objects: [{"symbol":"string","name":"string","category":"largecap|midcap|smallcap"}]. Market data: ${JSON.stringify(prompt)}`,
+              },
+            ],
+          },
+          {
+            timeout: config.ai.timeoutMs,
+            headers: {
+              Authorization: `Bearer ${config.ai.apiKey}`,
+              'Content-Type': 'application/json',
+            },
+          },
+        );
+
+        const content = response.data?.choices?.[0]?.message?.content;
+        if (content) {
+          try {
+            const parsed = JSON.parse(content);
+            if (Array.isArray(parsed) && parsed.length >= 7) {
+              primaryStocks = parsed.slice(0, 10).map((s: { symbol: string; name: string }) => ({
+                symbol: s.symbol?.toUpperCase() || '',
+                name: s.name || s.symbol,
+              })).filter((s: { symbol: string }) => s.symbol);
+            }
+          } catch {
+          }
+        }
+      } catch (aiError) {
+      }
+    }
+
+    const finalStocks = primaryStocks.slice(0, 10).filter(s => s.symbol);
+    res.json({ success: true, data: finalStocks, timestamp: new Date().toISOString() });
+  }),
+
   getNews: asyncHandler(async (req: Request, res: Response) => {
     setCacheHeaders(res, 120, 300);
     const { filter = 'all', category, limit = '20' } = req.query;

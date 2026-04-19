@@ -8,6 +8,7 @@ router.use(apiLimiter);
 router.get('/indices',                     marketController.getIndices);
 router.get('/indices/list',                marketController.getIndicesList);
 router.get('/catalog',                     marketController.getCatalog);
+router.get('/primary-watchlist',            marketController.getPrimaryWatchlist);
 router.get('/summary',                     marketController.getMarketSummary);
 router.get('/today',                       marketController.getTodayDesk);
 router.get('/sectors',                     marketController.getSectorPerformance);

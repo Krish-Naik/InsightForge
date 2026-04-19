@@ -11,6 +11,9 @@ import {
   Trash2,
   Wallet,
   X,
+  ArrowUpDown,
+  TrendingUp,
+  BarChart3,
 } from 'lucide-react';
 import { SymbolLink } from '@/components/ui/SymbolLink';
 import { EmptyPanel, MetricTile, PageHeader, SectionCard, TrendBadge } from '@/components/ui/page-kit';
@@ -20,10 +23,14 @@ import { searchCatalogStocks, useMarketCatalog } from '@/lib/hooks/useMarketCata
 import { useDebounce } from '@/lib/hooks/useDebounce';
 import { isLocalPersistenceMode } from '@/lib/runtime';
 import { ensureWorkspaceSession, resetWorkspaceSession } from '@/lib/workspaceSession';
+import { Sparkline } from '@/components/charts/Sparkline';
 
 const STORAGE_KEY = 'sp_portfolios_v4';
 
 const DEFAULT_PORTFOLIOS = [{ id: '1', name: 'Primary Portfolio', holdings: [] }];
+
+type SortField = 'symbol' | 'value' | 'pnl' | 'qty' | 'avgPrice';
+type SortDir = 'asc' | 'desc';
 
 type Holding = {
   id: string;
@@ -86,6 +93,9 @@ export default function PortfolioPage() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [composer, setComposer] = useState({ symbol: '', name: '', qty: '', avgPrice: '', sector: '' });
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [sortField, setSortField] = useState<SortField>('value');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [selectedHolding, setSelectedHolding] = useState<string | null>(null);
   const debouncedSearch = useDebounce(search, 300);
 
   useEffect(() => {
@@ -317,6 +327,30 @@ export default function PortfolioPage() {
     return { holding, quote, ltp, currentValue, investedValue, pnl, pnlPercent, dayPnl };
   });
 
+  const sortedPortfolioRows = useMemo(() => {
+    const sorted = [...portfolioRows].sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case 'symbol': cmp = a.holding.symbol.localeCompare(b.holding.symbol); break;
+        case 'value': cmp = a.currentValue - b.currentValue; break;
+        case 'pnl': cmp = a.pnl - b.pnl; break;
+        case 'qty': cmp = a.holding.qty - b.holding.qty; break;
+        case 'avgPrice': cmp = a.holding.avgPrice - b.holding.avgPrice; break;
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return sorted;
+  }, [portfolioRows, sortField, sortDir]);
+
+  const toggleSort = useCallback((field: SortField) => {
+    if (sortField === field) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDir(field === 'symbol' ? 'asc' : 'desc');
+    }
+  }, [sortField]);
+
   const totals = useMemo(() => {
     const invested = portfolioRows.reduce((sum, row) => sum + row.investedValue, 0);
     const current = portfolioRows.reduce((sum, row) => sum + row.currentValue, 0);
@@ -339,20 +373,12 @@ export default function PortfolioPage() {
       <PageHeader
         kicker="Portfolio"
         title={activePortfolio?.name || 'Conviction And Carry'}
-        description="Portfolio should help traders judge conviction, exposure, and carry-forward risk, not just stare at mark-to-market numbers."
+        description="Track holdings, sector allocation, and performance across the active book."
         actions={
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             {lastUpdated ? <span className="topbar-pill">Updated {formatIST(lastUpdated)}</span> : null}
-            <TrendBadge tone={persistenceMode === 'cloud' ? 'positive' : 'warning'}>
-              {persistenceMode === 'cloud' ? 'Mongo workspace sync' : 'Local device storage'}
-            </TrendBadge>
             <button onClick={fetchQuotes} disabled={loadingQuotes} className="btn btn-ghost">
               <RefreshCw style={{ width: 14, height: 14 }} className={loadingQuotes ? 'anim-spin' : ''} />
-              Refresh holdings
-            </button>
-            <button onClick={() => setShowComposer((current) => !current)} className="btn btn-primary">
-              <Plus style={{ width: 14, height: 14 }} />
-              Add holding
             </button>
           </div>
         }
@@ -365,6 +391,52 @@ export default function PortfolioPage() {
         <MetricTile label="Day P&L" value={`${totals.dayPnl >= 0 ? '+' : ''}${formatCurrency(totals.dayPnl)}`} tone={totals.dayPnl >= 0 ? 'positive' : 'negative'} icon={Wallet} subtext="Approximate session move based on day change" />
       </div>
 
+      <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 12 }}>
+        {portfolios.map((portfolio) => {
+          const active = activePortfolio?.id === portfolio.id;
+          return (
+            <div
+              key={portfolio.id}
+              onClick={() => setActiveId(portfolio.id)}
+              className="list-card"
+              style={{ minWidth: 160, padding: 10, cursor: 'pointer', borderColor: active ? 'var(--primary)' : undefined, background: active ? 'rgba(217,154,79,0.1)' : undefined, flexShrink: 0 }}
+            >
+              {editingId === portfolio.id ? (
+                <div onClick={(e) => e.stopPropagation()}>
+                  <input value={draftName} onChange={(e) => setDraftName(e.target.value)} className="input" style={{ marginBottom: 6 }} />
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button onClick={() => renamePortfolio(portfolio.id)} className="btn btn-primary" style={{ fontSize: 10 }}>Save</button>
+                    <button onClick={() => setEditingId(null)} className="btn btn-ghost" style={{ fontSize: 10 }}>Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ fontWeight: 700, fontSize: 12 }}>{portfolio.name}</span>
+                    {active && <TrendBadge tone="primary">Active</TrendBadge>}
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--text-3)' }}>{portfolio.holdings.length} holdings</div>
+                  <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
+                    <button onClick={(e) => { e.stopPropagation(); setEditingId(portfolio.id); setDraftName(portfolio.name); }} className="btn btn-ghost" style={{ padding: '4px 6px' }}>
+                      <Pencil style={{ width: 10, height: 10 }} />
+                    </button>
+                    {portfolios.length > 1 && (
+                      <button onClick={(e) => { e.stopPropagation(); deletePortfolio(portfolio.id); }} className="btn btn-danger" style={{ padding: '4px 6px' }}>
+                        <Trash2 style={{ width: 10, height: 10 }} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+        <button onClick={createPortfolio} className="btn btn-ghost" style={{ minWidth: 80, flexShrink: 0 }}>
+          <FolderPlus style={{ width: 12, height: 12 }} />
+          New
+        </button>
+      </div>
+
       {bootstrapping || statusMessage ? (
         <div className="metric-footnote" style={{ marginTop: 12 }}>
           {bootstrapping ? 'Preparing workspace session and persistence layer...' : statusMessage}
@@ -373,62 +445,6 @@ export default function PortfolioPage() {
 
       <div className="workbench-grid">
         <div className="workbench-column">
-          <SectionCard title="Portfolios" subtitle="Manage separate books for core and tactical exposure" icon={FolderPlus}>
-            <div className="panel-scroll-tight stack-12">
-              {portfolios.map((portfolio) => {
-                const active = activePortfolio?.id === portfolio.id;
-                return (
-                  <div
-                    key={portfolio.id}
-                    className="list-card"
-                    style={{
-                      borderColor: active ? 'rgba(217, 154, 79, 0.34)' : undefined,
-                      background: active ? 'linear-gradient(135deg, rgba(217, 154, 79, 0.16), rgba(255,248,236,0.03))' : undefined,
-                    }}
-                  >
-                    {editingId === portfolio.id ? (
-                      <div className="stack-8">
-                        <input value={draftName} onChange={(event) => setDraftName(event.target.value)} className="input" />
-                        <div style={{ display: 'flex', gap: 8 }}>
-                          <button onClick={() => renamePortfolio(portfolio.id)} className="btn btn-primary">Save</button>
-                          <button onClick={() => setEditingId(null)} className="btn btn-ghost">Cancel</button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <button type="button" onClick={() => setActiveId(portfolio.id)} style={{ width: '100%', background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                            <div>
-                              <div style={{ fontSize: 13, fontWeight: 700 }}>{portfolio.name}</div>
-                              <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>{portfolio.holdings.length} holdings</div>
-                            </div>
-                            {active ? <TrendBadge tone="primary">Active</TrendBadge> : null}
-                          </div>
-                        </button>
-                        <div style={{ marginTop: 10, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                          <button onClick={() => { setEditingId(portfolio.id); setDraftName(portfolio.name); }} className="btn btn-ghost">
-                            <Pencil style={{ width: 13, height: 13 }} />
-                            Rename
-                          </button>
-                          {portfolios.length > 1 ? (
-                            <button onClick={() => deletePortfolio(portfolio.id)} className="btn btn-danger">
-                              <Trash2 style={{ width: 13, height: 13 }} />
-                              Delete
-                            </button>
-                          ) : null}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-              <button onClick={createPortfolio} className="btn btn-ghost">
-                <FolderPlus style={{ width: 14, height: 14 }} />
-                Create portfolio
-              </button>
-            </div>
-          </SectionCard>
-
           <SectionCard title="Add Holding" subtitle="Search a stock and record quantity plus average cost" icon={Search}>
             <div className="stack-16">
               <button onClick={() => setShowComposer((current) => !current)} className="btn btn-ghost">
@@ -490,21 +506,47 @@ export default function PortfolioPage() {
         <div className="workbench-column">
           <SectionCard title="Allocation" subtitle="Current sector exposure by marked value" icon={PieChart}>
             {allocation.length ? (
-              <div className="panel-scroll-tight stack-12">
-                {allocation.map(([sector, value]) => {
-                  const weight = totals.current > 0 ? (value / totals.current) * 100 : 0;
-                  return (
-                    <div key={sector} className="list-card">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                        <div>
-                          <div style={{ fontSize: 12, fontWeight: 700 }}>{sector}</div>
-                          <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>{formatCurrency(value)}</div>
-                        </div>
-                        <TrendBadge tone="primary">{weight.toFixed(1)}%</TrendBadge>
+              <div className="stack-16">
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 120 }}>
+                  {allocation.map(([sector, value], index) => {
+                    const weight = totals.current > 0 ? (value / totals.current) * 100 : 0;
+                    const barHeight = Math.max(weight * 1.2, 8);
+                    const colors = ['#d99a4f', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899', '#ef4444', '#14b8a6', '#f59e0b'];
+                    const color = colors[index % colors.length];
+                    return (
+                      <div key={sector} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                        <div style={{ fontSize: 10, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>{weight.toFixed(1)}%</div>
+                        <div
+                          style={{
+                            width: '100%',
+                            height: barHeight,
+                            background: `linear-gradient(180deg, ${color}, ${color}88)`,
+                            borderRadius: 4,
+                            minHeight: 8,
+                          }}
+                          title={sector}
+                        />
+                        <div style={{ fontSize: 9, color: 'var(--text-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{sector}</div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
+                <div className="panel-scroll-tight stack-8">
+                  {allocation.map(([sector, value]) => {
+                    const weight = totals.current > 0 ? (value / totals.current) * 100 : 0;
+                    return (
+                      <div key={sector} className="list-card">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 700 }}>{sector}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>{formatCurrency(value)}</div>
+                          </div>
+                          <TrendBadge tone="primary">{weight.toFixed(1)}%</TrendBadge>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             ) : (
               <EmptyPanel title="No allocation yet" description="Sector allocation appears once you add holdings to the portfolio." icon={PieChart} />
@@ -512,29 +554,59 @@ export default function PortfolioPage() {
           </SectionCard>
 
           <SectionCard title="Holdings" subtitle="Cost basis, current value, and performance across the active book" icon={Wallet}>
-            {portfolioRows.length ? (
+            {sortedPortfolioRows.length ? (
               <div style={{ overflowX: 'auto' }}>
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th>Holding</th>
-                      <th style={{ textAlign: 'right' }}>Qty</th>
-                      <th style={{ textAlign: 'right' }}>Avg Price</th>
-                      <th style={{ textAlign: 'right' }}>LTP</th>
-                      <th style={{ textAlign: 'right' }}>Value</th>
-                      <th style={{ textAlign: 'right' }}>P&L</th>
-                      <th style={{ textAlign: 'right' }}>Day P&L</th>
-                      <th style={{ textAlign: 'center' }}>Action</th>
+                      <th onClick={() => toggleSort('symbol')} style={{ cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          Holding {sortField === 'symbol' && (sortDir === 'asc' ? '↑' : '↓')}
+                        </span>
+                      </th>
+                      <th style={{ width: 80 }}>Trend</th>
+                      <th onClick={() => toggleSort('qty')} style={{ cursor: 'pointer', userSelect: 'none', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+                          Qty {sortField === 'qty' && (sortDir === 'asc' ? '↑' : '↓')}
+                        </span>
+                      </th>
+                      <th onClick={() => toggleSort('avgPrice')} style={{ cursor: 'pointer', userSelect: 'none', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+                          Avg Price {sortField === 'avgPrice' && (sortDir === 'asc' ? '↑' : '↓')}
+                        </span>
+                      </th>
+                      <th style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>LTP</th>
+                      <th onClick={() => toggleSort('value')} style={{ cursor: 'pointer', userSelect: 'none', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+                          Value {sortField === 'value' && (sortDir === 'asc' ? '↑' : '↓')}
+                        </span>
+                      </th>
+                      <th onClick={() => toggleSort('pnl')} style={{ cursor: 'pointer', userSelect: 'none', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+                          P&L {sortField === 'pnl' && (sortDir === 'asc' ? '↑' : '↓')}
+                        </span>
+                      </th>
+                      <th style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>Day P&L</th>
+                      <th style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {portfolioRows.map((row) => (
-                      <tr key={row.holding.id}>
+                    {sortedPortfolioRows.map((row) => (
+                      <tr
+                        key={row.holding.id}
+                        onClick={() => setSelectedHolding(selectedHolding === row.holding.id ? null : row.holding.id)}
+                        style={{ cursor: 'pointer', background: selectedHolding === row.holding.id ? 'rgba(217, 154, 79, 0.08)' : undefined }}
+                      >
                         <td>
                           <SymbolLink symbol={row.holding.symbol} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}>
                             <div className="mono" style={{ fontSize: 12, fontWeight: 700 }}>{row.holding.symbol}</div>
                             <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{row.holding.name}</div>
                           </SymbolLink>
+                        </td>
+                        <td style={{ padding: '6px 4px' }}>
+                          <div style={{ width: 70, height: 28 }}>
+                            <Sparkline symbol={row.holding.symbol} period="1mo" width={70} height={28} />
+                          </div>
                         </td>
                         <td style={{ textAlign: 'right' }}><span className="mono">{row.holding.qty}</span></td>
                         <td style={{ textAlign: 'right' }}><span className="mono">{formatCurrency(row.holding.avgPrice)}</span></td>
@@ -552,9 +624,8 @@ export default function PortfolioPage() {
                           </span>
                         </td>
                         <td style={{ textAlign: 'center' }}>
-                          <button onClick={() => removeHolding(row.holding.id)} className="btn btn-danger">
+                          <button onClick={(e) => { e.stopPropagation(); removeHolding(row.holding.id); }} className="btn btn-danger">
                             <Trash2 style={{ width: 13, height: 13 }} />
-                            Remove
                           </button>
                         </td>
                       </tr>
@@ -566,6 +637,89 @@ export default function PortfolioPage() {
               <EmptyPanel title="No holdings yet" description="Open the composer and add a few positions to start tracking your portfolio." icon={Wallet} />
             )}
           </SectionCard>
+
+          {selectedHolding && (
+            <SectionCard title="Position Detail" subtitle={`Detailed view for ${sortedPortfolioRows.find(r => r.holding.id === selectedHolding)?.holding.symbol || 'selected position'}`} icon={BarChart3}>
+              {(() => {
+                const row = sortedPortfolioRows.find(r => r.holding.id === selectedHolding);
+                if (!row) return null;
+                return (
+                  <div className="stack-16">
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
+                      <div className="metric-card">
+                        <div className="stat-label">Symbol</div>
+                        <div className="metric-value" style={{ fontSize: 18 }}>{row.holding.symbol}</div>
+                      </div>
+                      <div className="metric-card">
+                        <div className="stat-label">Company</div>
+                        <div className="metric-value" style={{ fontSize: 14 }}>{row.holding.name}</div>
+                      </div>
+                      <div className="metric-card">
+                        <div className="stat-label">Quantity</div>
+                        <div className="metric-value" style={{ fontSize: 18 }}>{row.holding.qty}</div>
+                      </div>
+                      <div className="metric-card">
+                        <div className="stat-label">Avg Price</div>
+                        <div className="metric-value" style={{ fontSize: 18 }}>{formatCurrency(row.holding.avgPrice)}</div>
+                      </div>
+                      <div className="metric-card">
+                        <div className="stat-label">LTP</div>
+                        <div className="metric-value" style={{ fontSize: 18 }}>{formatCurrency(row.ltp)}</div>
+                      </div>
+                      <div className="metric-card">
+                        <div className="stat-label">Current Value</div>
+                        <div className="metric-value" style={{ fontSize: 18 }}>{formatCurrency(row.currentValue)}</div>
+                      </div>
+                      <div className="metric-card" style={{ borderColor: row.pnl >= 0 ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)', background: row.pnl >= 0 ? 'rgba(34, 197, 94, 0.05)' : 'rgba(239, 68, 68, 0.05)' }}>
+                        <div className="stat-label">Unrealized P&L</div>
+                        <div className="metric-value" style={{ fontSize: 18, color: row.pnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                          {row.pnl >= 0 ? '+' : ''}{formatCurrency(row.pnl)}
+                        </div>
+                        <div className="metric-footnote">{formatPercent(row.pnlPercent)}</div>
+                      </div>
+                      <div className="metric-card" style={{ borderColor: row.dayPnl >= 0 ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)', background: row.dayPnl >= 0 ? 'rgba(34, 197, 94, 0.05)' : 'rgba(239, 68, 68, 0.05)' }}>
+                        <div className="stat-label">Day P&L</div>
+                        <div className="metric-value" style={{ fontSize: 18, color: row.dayPnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                          {row.dayPnl >= 0 ? '+' : ''}{formatCurrency(row.dayPnl)}
+                        </div>
+                      </div>
+                    </div>
+                    {row.quote && (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 12, marginTop: 16 }}>
+                        <div className="metric-card">
+                          <div className="stat-label">Day High</div>
+                          <div className="metric-value">{formatCurrency(row.quote.dayHigh)}</div>
+                        </div>
+                        <div className="metric-card">
+                          <div className="stat-label">Day Low</div>
+                          <div className="metric-value">{formatCurrency(row.quote.dayLow)}</div>
+                        </div>
+                        <div className="metric-card">
+                          <div className="stat-label">Volume</div>
+                          <div className="metric-value">{row.quote.volume?.toLocaleString()}</div>
+                        </div>
+                        <div className="metric-card">
+                          <div className="stat-label">52W High</div>
+                          <div className="metric-value">{formatCurrency(row.quote.high52w)}</div>
+                        </div>
+                        <div className="metric-card">
+                          <div className="stat-label">52W Low</div>
+                          <div className="metric-value">{formatCurrency(row.quote.low52w)}</div>
+                        </div>
+                        <div className="metric-card">
+                          <div className="stat-label">Market Cap</div>
+                          <div className="metric-value">{row.quote.marketCap ? `${(row.quote.marketCap / 1e12).toFixed(1)}T` : 'N/A'}</div>
+                        </div>
+                      </div>
+                    )}
+                    <div style={{ marginTop: 16 }}>
+                      <Sparkline symbol={row.holding.symbol} period="3mo" width={600} height={160} />
+                    </div>
+                  </div>
+                );
+              })()}
+            </SectionCard>
+          )}
         </div>
       </div>
     </div>

@@ -8,6 +8,9 @@ import { HistoricalSeriesChart } from '@/components/charts/HistoricalSeriesChart
 import { StoryTimeline } from '@/components/ui/insight-kit';
 import { SymbolLink } from '@/components/ui/SymbolLink';
 import { EmptyPanel, MetricTile, PageHeader, SectionCard, TrendBadge } from '@/components/ui/page-kit';
+import { FinancialDataSection } from '@/components/ui/FinancialDataSection';
+import { FinancialInsightSection } from '@/components/ui/FinancialInsightSection';
+import { PriceInsightSection } from '@/components/ui/PriceInsightSection';
 import { marketAPI, type StockResearch } from '@/lib/api';
 import { formatCurrency, formatIST, formatNumber, formatPercent, formatTimeAgo } from '@/lib/format';
 
@@ -129,6 +132,10 @@ export default function StockStoryPage() {
               </div>
             </SectionCard>
           )}
+
+          <PriceInsightSection symbol={symbol} />
+
+          <FinancialDataSection symbol={symbol} />
 
           <div className="workbench-grid">
             <div className="workbench-column">
@@ -262,16 +269,6 @@ export default function StockStoryPage() {
                   <Link href="/watchlist" className="btn btn-ghost">Track in watchlist</Link>
                   <Link href="/news" className="btn btn-ghost">Check story feed</Link>
                 </div>
-              </SectionCard>
-
-              <SectionCard title="Narrative Timeline" subtitle="Context over time, not just a static snapshot" icon={BrainCircuit}>
-                {story ? (
-                  <div className="panel-scroll-tight">
-                    <StoryTimeline items={story.timeline} />
-                  </div>
-                ) : (
-                  <EmptyPanel title="Timeline unavailable" description="The story timeline will appear once the narrative engine has enough context." icon={BrainCircuit} />
-                )}
               </SectionCard>
 
               <SectionCard title="Company Context" subtitle="Identity, coverage, and the practical limits of the data stack" icon={ShieldAlert}>
