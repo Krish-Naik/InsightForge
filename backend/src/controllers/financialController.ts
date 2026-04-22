@@ -1,259 +1,243 @@
 import { Request, Response } from 'express';
-import mongoose from 'mongoose';
 import { QuarterlyFinancial } from '../models/QuarterlyFinancial.js';
-import { computeMetrics, computeQuarterlyMetrics, searchStocksByMetrics, type StockMetricsSummary, type FinancialMetrics } from '../services/financialMetricsService.js';
-import { importAllQuarterlyFinancials, getFinancialSummary } from '../services/financialImportService.js';
+import { computeMetrics, searchStocksByMetrics } from '../services/financialMetricsService.js';
+import { asyncHandler, AppError } from '../utils/helpers.js';
 import { logger } from '../utils/logger.js';
 
 export const financialController = {
-  async getFinancials(req: Request, res: Response) {
-    try {
-      const { symbol, year, quarter, consolidationType } = req.query;
+  // Get all financials for a symbol
+  getFinancials: asyncHandler(async (req: Request, res: Response) => {
+    const { symbol } = req.params;
+    const { year, quarter, consolidationType = 'Standalone' } = req.query;
 
-      if (!symbol) {
-        return res.status(400).json({ error: 'Symbol is required' });
-      }
+    const query: any = {
+      symbol: symbol.toUpperCase(),
+      consolidationType: consolidationType as string,
+    };
 
-      const query: any = { symbol: (symbol as string).toUpperCase() };
-      if (year) query.year = parseInt(year as string);
-      if (quarter) query.quarter = quarter;
-      if (consolidationType) query.consolidationType = consolidationType;
+    if (year) query.year = parseInt(year as string);
+    if (quarter) query.quarter = quarter as string;
 
-      const financials = await QuarterlyFinancial.find(query)
-        .sort({ year: -1, quarter: -1 })
-        .lean();
+    const financials = await QuarterlyFinancial.find(query)
+      .sort({ year: -1, quarter: -1 })
+      .limit(20)
+      .lean();
 
-      res.json(financials);
-    } catch (error) {
-      logger.error(`Error getting financials: ${(error as Error).message}`);
-      res.status(500).json({ error: 'Failed to fetch financials' });
+    res.json({ success: true, data: financials });
+  }),
+
+  // Get latest financial data for a symbol
+  getLatestFinancials: asyncHandler(async (req: Request, res: Response) => {
+    const { symbol } = req.params;
+    const { consolidationType = 'Standalone' } = req.query;
+
+    const latest = await QuarterlyFinancial.findOne({
+      symbol: symbol.toUpperCase(),
+      consolidationType: consolidationType as string,
+    })
+      .sort({ year: -1, quarter: -1 })
+      .lean();
+
+    if (!latest) {
+      throw new AppError('No financial data found for this symbol', 404);
     }
-  },
 
-  async getLatestFinancials(req: Request, res: Response) {
-    try {
-      const { symbol, consolidationType = 'Standalone' } = req.query;
+    res.json({ success: true, data: latest });
+  }),
 
-      if (!symbol) {
-        return res.status(400).json({ error: 'Symbol is required' });
-      }
+  // Get comprehensive metrics for a symbol
+  getMetrics: asyncHandler(async (req: Request, res: Response) => {
+    const { symbol } = req.params;
+    const { year, consolidationType = 'Standalone' } = req.query;
 
-      const financials = await QuarterlyFinancial.findOne({
-        symbol: (symbol as string).toUpperCase(),
-        consolidationType,
-      })
-        .sort({ year: -1, quarter: -1 })
-        .lean();
+    const metrics = await computeMetrics(
+      symbol,
+      year ? parseInt(year as string) : undefined,
+      consolidationType as 'Standalone' | 'Consolidated'
+    );
 
-      res.json(financials);
-    } catch (error) {
-      logger.error(`Error getting latest financials: ${(error as Error).message}`);
-      res.status(500).json({ error: 'Failed to fetch latest financials' });
+    if (!metrics) {
+      throw new AppError('No metrics available for this symbol', 404);
     }
-  },
 
-  async getMetrics(req: Request, res: Response) {
-    try {
-      const { symbol: pathSymbol } = req.params;
-      const { year, consolidationType = 'Standalone' } = req.query;
+    res.json({ success: true, data: metrics });
+  }),
 
-      if (!pathSymbol) {
-        return res.status(400).json({ error: 'Symbol is required' });
-      }
+  // Get quarterly metrics for a specific quarter
+  getQuarterlyMetrics: asyncHandler(async (req: Request, res: Response) => {
+    const { symbol, year, quarter } = req.params;
+    const { consolidationType = 'Standalone' } = req.query;
 
-      const symbol = pathSymbol.toUpperCase();
+    const financial = await QuarterlyFinancial.findOne({
+      symbol: symbol.toUpperCase(),
+      year: parseInt(year),
+      quarter,
+      consolidationType: consolidationType as string,
+    }).lean();
 
-      let metrics = await computeMetrics(
-        symbol,
-        year ? parseInt(year as string) : undefined,
-        'Standalone'
-      );
-
-      if (!metrics) {
-        metrics = await computeMetrics(
-          symbol,
-          year ? parseInt(year as string) : undefined,
-          'Consolidated'
-        );
-      }
-
-      if (!metrics) {
-        return res.status(404).json({ error: 'No financial data found for symbol' });
-      }
-
-      res.json(metrics);
-    } catch (error) {
-      logger.error(`Error getting metrics: ${(error as Error).message}`, { stack: (error as Error).stack });
-      res.status(500).json({ error: 'Failed to compute metrics' });
+    if (!financial) {
+      throw new AppError('No data found for this quarter', 404);
     }
-  },
 
-  async getQuarterlyMetrics(req: Request, res: Response) {
-    try {
-      const { symbol: pathSymbol, year, quarter } = req.params;
-      const { consolidationType = 'Standalone' } = req.query;
+    // Get full metrics including price data
+    const metrics = await computeMetrics(
+      symbol,
+      parseInt(year),
+      consolidationType as 'Standalone' | 'Consolidated'
+    );
 
-      if (!pathSymbol || !year || !quarter) {
-        return res.status(400).json({ error: 'Symbol, year, and quarter are required' });
-      }
+    const quarterMetrics = metrics?.quarters.find(
+      q => q.year === parseInt(year) && q.quarter === quarter
+    );
 
-      const metrics = await computeQuarterlyMetrics(
-        pathSymbol,
-        parseInt(year),
-        quarter,
-        consolidationType as 'Standalone' | 'Consolidated'
-      );
+    res.json({ success: true, data: quarterMetrics || financial });
+  }),
 
-      if (!metrics) {
-        return res.status(404).json({ error: 'No financial data found' });
-      }
+  // Get financial profile (comprehensive data for stock story page)
+  getFinancialProfile: asyncHandler(async (req: Request, res: Response) => {
+    const { symbol } = req.params;
+    const { consolidationType = 'Standalone' } = req.query;
 
-      res.json(metrics);
-    } catch (error) {
-      logger.error(`Error getting quarterly metrics: ${(error as Error).message}`);
-      res.status(500).json({ error: 'Failed to compute quarterly metrics' });
+    const metrics = await computeMetrics(
+      symbol,
+      undefined,
+      consolidationType as 'Standalone' | 'Consolidated'
+    );
+
+    if (!metrics) {
+      throw new AppError('No financial profile available for this symbol', 404);
     }
-  },
 
-  async searchByMetrics(req: Request, res: Response) {
-    try {
-      const criteria = req.query;
-      const limit = criteria.limit ? parseInt(criteria.limit as string) : 50;
-
-      const results = await searchStocksByMetrics({
-        minRoe: criteria.minRoe ? parseFloat(criteria.minRoe as string) : undefined,
-        maxRoe: criteria.maxRoe ? parseFloat(criteria.maxRoe as string) : undefined,
-        minRoce: criteria.minRoce ? parseFloat(criteria.minRoce as string) : undefined,
-        maxRoce: criteria.maxRoce ? parseFloat(criteria.maxRoce as string) : undefined,
-        minNetMargin: criteria.minNetMargin ? parseFloat(criteria.minNetMargin as string) : undefined,
-        maxNetMargin: criteria.maxNetMargin ? parseFloat(criteria.maxNetMargin as string) : undefined,
-        minDebtToEquity: criteria.minDebtToEquity ? parseFloat(criteria.minDebtToEquity as string) : undefined,
-        maxDebtToEquity: criteria.maxDebtToEquity ? parseFloat(criteria.maxDebtToEquity as string) : undefined,
-        minCurrentRatio: criteria.minCurrentRatio ? parseFloat(criteria.minCurrentRatio as string) : undefined,
-        minDividendYield: criteria.minDividendYield ? parseFloat(criteria.minDividendYield as string) : undefined,
-        maxPe: criteria.maxPe ? parseFloat(criteria.maxPe as string) : undefined,
-        minRevenue: criteria.minRevenue ? parseFloat(criteria.minRevenue as string) : undefined,
-        limit,
-      });
-
-      res.json(results);
-    } catch (error) {
-      logger.error(`Error searching by metrics: ${(error as Error).message}`);
-      res.status(500).json({ error: 'Failed to search stocks' });
-    }
-  },
-
-  async importFinancials(req: Request, res: Response) {
-    try {
-      const { dataDir, limit, skipExisting = true, dryRun = false } = req.body;
-
-      if (!dataDir) {
-        return res.status(400).json({ error: 'dataDir is required' });
-      }
-
-      const result = await importAllQuarterlyFinancials(dataDir, {
-        limit: limit ? parseInt(limit) : undefined,
-        skipExisting,
-        dryRun,
-      });
-
-      res.json(result);
-    } catch (error) {
-      logger.error(`Error importing financials: ${(error as Error).message}`);
-      res.status(500).json({ error: 'Failed to import financials' });
-    }
-  },
-
-  async getSummary(req: Request, res: Response) {
-    try {
-      const summary = await getFinancialSummary();
-      res.json(summary);
-    } catch (error) {
-      logger.error(`Error getting summary: ${(error as Error).message}`);
-      res.status(500).json({ error: 'Failed to get summary' });
-    }
-  },
-
-  async getScreenerData(req: Request, res: Response) {
-    try {
-      const { symbols, filters, limit = 100 } = req.body;
-
-      const match: any = {
-        consolidationType: 'Standalone',
-      };
-
-      if (symbols && symbols.length > 0) {
-        match.symbol = { $in: symbols };
-      }
-
-      const financials = await QuarterlyFinancial.aggregate([
-        { $match: match },
-        { $sort: { year: -1, quarter: -1 } },
-        {
-          $group: {
-            _id: { symbol: '$symbol' },
-            doc: { $first: '$$ROOT' },
-          },
+    // Format for stock story page
+    const profile = {
+      symbol: metrics.symbol,
+      companyName: metrics.companyName,
+      latest: metrics.latest,
+      annual: metrics.annual,
+      quarters: metrics.quarters.slice(0, 4), // Last 4 quarters
+      
+      // Summary metrics
+      summary: {
+        currentPrice: metrics.latest?.currentPrice,
+        marketCap: metrics.latest?.marketCap,
+        peRatio: metrics.latest?.peRatio,
+        pbRatio: metrics.latest?.pbRatio,
+        dividendYield: metrics.latest?.dividendYield,
+        
+        profitability: {
+          roe: metrics.latest?.roe,
+          roce: metrics.latest?.roce,
+          roa: metrics.latest?.roa,
+          netMargin: metrics.latest?.netMargin,
+          grossMargin: metrics.latest?.grossMargin,
         },
-        { $replaceRoot: { newRoot: '$doc' } },
-        { $limit: parseInt(limit) + 100 },
-      ]);
+        
+        leverage: {
+          debtToEquity: metrics.latest?.debtToEquity,
+          currentRatio: metrics.latest?.currentRatio,
+          quickRatio: metrics.latest?.quickRatio,
+          interestCoverage: metrics.latest?.interestCoverage,
+        },
+        
+        growth: {
+          revenueGrowth: metrics.latest?.revenueGrowth,
+          profitGrowth: metrics.latest?.profitGrowth,
+          epsGrowth: metrics.latest?.epsYoYGrowth,
+        },
+        
+        cashFlow: {
+          operatingCashFlow: metrics.latest?.operatingCashFlow,
+          freeCashFlow: metrics.latest?.freeCashFlow,
+          cashConversion: metrics.latest?.cashConversion,
+        },
+      },
+    };
 
-      const results: any[] = [];
-      const processed = new Set<string>();
+    res.json({ success: true, data: profile });
+  }),
 
-      for (const f of financials) {
-        if (processed.has(f.symbol)) continue;
-        processed.add(f.symbol);
+  // Search by metrics (legacy endpoint)
+  searchByMetrics: asyncHandler(async (req: Request, res: Response) => {
+    const { minRoe, maxRoe, minRevenue, limit = '50' } = req.query;
 
-        const metrics = await computeMetrics(f.symbol);
-        if (!metrics?.latest) continue;
+    const criteria: any = { limit: parseInt(limit as string) };
+    if (minRoe) criteria.minRoe = parseFloat(minRoe as string);
+    if (maxRoe) criteria.maxRoe = parseFloat(maxRoe as string);
+    if (minRevenue) criteria.minRevenue = parseFloat(minRevenue as string);
 
-        let pass = true;
-        if (filters) {
-          for (const filter of filters) {
-            const metricValue = metrics.latest[filter.metric as keyof typeof metrics.latest];
-            const numValue = typeof metricValue === 'number' ? metricValue : (metricValue ? parseFloat(String(metricValue)) : null);
-            if (numValue === null || isNaN(numValue)) {
-              pass = false;
-              break;
-            }
+    const results = await searchStocksByMetrics(criteria);
 
-            const filterNum = parseFloat(filter.value);
-            switch (filter.operator) {
-              case '>':
-                pass = numValue > filterNum;
-                break;
-              case '<':
-                pass = numValue < filterNum;
-                break;
-              case '>=':
-                pass = numValue >= filterNum;
-                break;
-              case '<=':
-                pass = numValue <= filterNum;
-                break;
-              case '=':
-                pass = numValue === filterNum;
-                break;
-            }
+    res.json({ success: true, data: results });
+  }),
 
-            if (!pass) break;
-          }
-        }
+  // Get screener data (legacy endpoint)
+  getScreenerData: asyncHandler(async (_req: Request, res: Response) => {
+    const results = await searchStocksByMetrics({ limit: 100 });
+    res.json({ success: true, data: results });
+  }),
 
-        if (pass) {
-          const entry: any = { ...metrics.latest };
-          results.push(entry);
-        }
+  // Run advanced screener with filter criteria
+  runAdvancedScreener: asyncHandler(async (req: Request, res: Response) => {
+    const filters = req.body;
+    const criteria: any = { limit: filters.limit || 200 };
+    
+    if (filters.minPe) criteria.minPeRatio = filters.minPe;
+    if (filters.maxPe) criteria.maxPeRatio = filters.maxPe;
+    if (filters.minPb) criteria.minPbRatio = filters.minPb;
+    if (filters.maxPb) criteria.maxPbRatio = filters.maxPb;
+    if (filters.minRoe) criteria.minRoe = filters.minRoe;
+    if (filters.maxRoe) criteria.maxRoe = filters.maxRoe;
+    if (filters.minRoce) criteria.minRoce = filters.minRoce;
+    if (filters.minRoa) criteria.minRoa = filters.minRoa;
+    if (filters.minNetMargin) criteria.minNetMargin = filters.minNetMargin;
+    if (filters.maxNetMargin) criteria.maxNetMargin = filters.maxNetMargin;
+    if (filters.minGrossMargin) criteria.minGrossMargin = filters.minGrossMargin;
+    if (filters.minDebtToEquity) criteria.minDebtToEquity = filters.minDebtToEquity;
+    if (filters.maxDebtToEquity) criteria.maxDebtToEquity = filters.maxDebtToEquity;
+    if (filters.minCurrentRatio) criteria.minCurrentRatio = filters.minCurrentRatio;
+    if (filters.maxCurrentRatio) criteria.maxCurrentRatio = filters.maxCurrentRatio;
+    if (filters.minInterestCoverage) criteria.minInterestCoverage = filters.minInterestCoverage;
+    if (filters.minRevenueGrowth) criteria.minRevenueGrowth = filters.minRevenueGrowth;
+    if (filters.minProfitGrowth) criteria.minProfitGrowth = filters.minProfitGrowth;
+    if (filters.minEpsGrowth) criteria.minEpsGrowth = filters.minEpsGrowth;
+    if (filters.minDividendYield) criteria.minDividendYield = filters.minDividendYield;
+    if (filters.minMarketCap) criteria.minMarketCap = filters.minMarketCap;
+    if (filters.maxMarketCap) criteria.maxMarketCap = filters.maxMarketCap;
 
-        if (results.length >= parseInt(limit)) break;
-      }
+    const results = await searchStocksByMetrics(criteria);
+    res.json({ success: true, data: results });
+  }),
 
-      res.json(results.slice(0, parseInt(limit)));
-    } catch (error) {
-      logger.error(`Error getting screener data: ${(error as Error).message}`);
-      res.status(500).json({ error: 'Failed to get screener data' });
-    }
-  },
+  // Get summary statistics
+  getSummary: asyncHandler(async (_req: Request, res: Response) => {
+    const stats = await QuarterlyFinancial.aggregate([
+      { $match: { consolidationType: 'Standalone' } },
+      { $sort: { year: -1, quarter: -1 } },
+      {
+        $group: {
+          _id: '$symbol',
+          latest: { $first: '$$ROOT' },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalStocks: { $sum: 1 },
+          avgRevenue: { $avg: '$latest.revenueFromOperations' },
+          avgProfit: { $avg: '$latest.profitLossForPeriod' },
+          totalRevenue: { $sum: '$latest.revenueFromOperations' },
+        },
+      },
+    ]);
+
+    res.json({ success: true, data: stats[0] || {} });
+  }),
+
+  // Import financials (placeholder)
+  importFinancials: asyncHandler(async (_req: Request, res: Response) => {
+    res.json({
+      success: true,
+      message: 'Import endpoint - not implemented in this version',
+    });
+  }),
 };

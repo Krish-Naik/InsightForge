@@ -36,16 +36,19 @@ export interface RadarSignalCard {
   strength:        SignalStrength;
   confidence:      number;          // 0–100
   price:           number;
+  currentPrice:    number | null;
   changePercent:   number;
   volume:          number;
   volumeRatio:     number;          // relative to universe avg
   week52Position:  number;          // 0–100 (% within 52w range)
-  rsiEstimate:     number;          // heuristic RSI from price position
+  rsiEstimate:    number;          // heuristic RSI from price position
   entryZone:       number | null;
   stopLoss:        number | null;
   target:          number | null;
-  whyNow:          string;
-  sector:          string;
+  support:         number | null;
+  resistance:      number | null;
+  whyNow:         string;
+  sector:         string;
   timestamp:       string;
 }
 
@@ -145,6 +148,18 @@ function buildWhyNow(
   }
 }
 
+// ── Calculate Support/Resistance from 52-week range ───────────────────
+function calcSupportResistance(price: number, low52: number, high52: number): { support: number; resistance: number } {
+  const range = high52 - low52;
+  if (range <= 0 || !low52 || !high52) {
+    return { support: price * 0.97, resistance: price * 1.03 };
+  }
+  // Support at 25% of range from low, Resistance at 25% of range from high
+  const support = low52 + (range * 0.25);
+  const resistance = high52 - (range * 0.25);
+  return { support, resistance };
+}
+
 // ── Signal builders ───────────────────────────────────────────────────────────
 function buildCard(
   quote: Quote & { sector?: string },
@@ -159,6 +174,9 @@ function buildCard(
   const { entry, stop, target } = calcEntryStopTarget(
     quote.price, direction, quote.low52w, quote.high52w,
   );
+  const { support, resistance } = calcSupportResistance(
+    quote.price, quote.low52w, quote.high52w,
+  );
 
   return {
     id:             `${type}-${quote.symbol}-${Date.now()}`,
@@ -170,6 +188,7 @@ function buildCard(
     strength:       strengthFromConfidence(confidence),
     confidence:     clamp(Math.round(confidence), 35, 97),
     price:          quote.price,
+    currentPrice:   quote.price,
     changePercent:  quote.changePercent,
     volume:         quote.volume,
     volumeRatio:    Math.round(volRatio * 10) / 10,
@@ -178,6 +197,8 @@ function buildCard(
     entryZone:      entry,
     stopLoss:       stop,
     target,
+    support,
+    resistance,
     whyNow:         buildWhyNow(type, quote.symbol, pos52, volRatio, rsi, quote.changePercent),
     sector:         quote.sector || 'Unclassified',
     timestamp:      quote.timestamp,

@@ -1,6 +1,7 @@
 import { logger } from '../utils/logger.js';
 import {
   MARKET_INDICES,
+  NIFTY_50_STOCKS,
   getSearchCatalogResults,
 } from '../data/marketCatalog.js';
 import { MarketUniverseService } from './marketUniverseService.js';
@@ -174,31 +175,59 @@ export class MarketDataService {
   static async getMoversByCap(cap: string): Promise<{ gainers: Quote[]; losers: Quote[]; volumeLeaders: Quote[] }> {
     const summary = await this.getMarketSummary();
     
+    // Deduplicate by symbol first
+    const seen = new Set<string>();
     let allQuotes = [...summary.gainers, ...summary.losers, ...summary.mostActive]
-      .filter(q => q.price > 0);
+      .filter(q => {
+        if (seen.has(q.symbol)) return false;
+        seen.add(q.symbol);
+        return q.price > 0;
+      });
     
-    const LARGE_PRICE = 500;
-    const MID_PRICE = 100;
+    // Use NIFTY 50 list for accurate largecap identification
+    const nifty50 = new Set(NIFTY_50_STOCKS);
+    
+    // Categorize by cap based on multiple factors:
+    // - NIFTY 50 = Largecap
+    // - High price + high volume + high market cap = Midcap  
+    // - Remaining = Smallcap
+    const LARGE_PRICE = 1000;
+    const MID_PRICE = 200;
+    const LARGE_VOLUME = 5000000; // 50L volume threshold
     
     let filtered: Quote[];
     switch (cap) {
       case 'largecap':
-        filtered = allQuotes.filter(q => q.price >= LARGE_PRICE);
+        // NIFTY 50 stocks + high price stocks with high volume
+        filtered = allQuotes.filter(q => {
+          const isNifty50 = nifty50.has(q.symbol);
+          const isHighPriceHighVol = q.price >= LARGE_PRICE && (q.volume || 0) >= LARGE_VOLUME;
+          return isNifty50 || isHighPriceHighVol;
+        });
         break;
       case 'midcap':
-        filtered = allQuotes.filter(q => q.price >= MID_PRICE && q.price < LARGE_PRICE);
+        // Mid price stocks with good volume (not in NIFTY 50)
+        filtered = allQuotes.filter(q => {
+          const isNifty50 = nifty50.has(q.symbol);
+          const isMidPrice = q.price >= MID_PRICE && q.price < LARGE_PRICE;
+          const hasVolume = (q.volume || 0) >= 1000000;
+          return !isNifty50 && isMidPrice && hasVolume;
+        });
         break;
       case 'smallcap':
-        filtered = allQuotes.filter(q => q.price < MID_PRICE);
+        // Lower price stocks with decent volume (not in NIFTY 50)
+        filtered = allQuotes.filter(q => {
+          const isNifty50 = nifty50.has(q.symbol);
+          const isSmallPrice = q.price > 0 && q.price < LARGE_PRICE;
+          const hasSomeVolume = (q.volume || 0) >= 100000;
+          return !isNifty50 && isSmallPrice && hasSomeVolume;
+        });
         break;
       default:
         filtered = allQuotes;
     }
     
-    if (filtered.length < 10) {
-      filtered = allQuotes;
-    }
-    
+    // Use traded value (price * volume) for volume leaders
     const topGainers = [...filtered]
       .sort((a, b) => (b.changePercent || 0) - (a.changePercent || 0))
       .slice(0, 10);
@@ -208,7 +237,11 @@ export class MarketDataService {
       .slice(0, 10);
     
     const topVolume = [...filtered]
-      .sort((a, b) => (b.volume || 0) - (a.volume || 0))
+      .sort((a, b) => {
+        const valueA = (a.price || 0) * (a.volume || 0);
+        const valueB = (b.price || 0) * (b.volume || 0);
+        return valueB - valueA;
+      })
       .slice(0, 10);
     
     return {

@@ -1,5 +1,6 @@
 import { QuarterlyFinancial } from '../models/QuarterlyFinancial.js';
 import { logger } from '../utils/logger.js';
+import { getStockData } from './stockCacheService.js';
 
 export interface FinancialMetrics {
   symbol: string;
@@ -8,50 +9,71 @@ export interface FinancialMetrics {
   quarter: string;
   consolidationType: string;
 
+  // Price data (from yfinance)
+  currentPrice: number | null;
+  marketCap: number | null;
+  
+  // Financial data (from MongoDB)
   revenueFromOperations: number | null;
   profitAfterTax: number | null;
   totalAssets: number | null;
   totalEquity: number | null;
   totalLiabilities: number | null;
   borrowingsTotal: number | null;
+  totalCurrentAssets: number | null;
+  totalCurrentLiabilities: number | null;
+  inventories: number | null;
+  operatingCashFlow: number | null;
+  freeCashFlow: number | null;
 
+  // Per-share metrics
   eps: number | null;
   epsYoYGrowth: number | null;
   bookValuePerShare: number | null;
   faceValuePerShare: number | null;
+  numberOfShares: number | null;
 
+  // Profitability ratios
   roe: number | null;
   roeYoYGrowth: number | null;
   roce: number | null;
   roceYoYGrowth: number | null;
   roa: number | null;
   roaYoYGrowth: number | null;
-
   netMargin: number | null;
   netMarginYoYGrowth: number | null;
   grossMargin: number | null;
 
+  // Valuation ratios (require current price)
+  peRatio: number | null;
+  pbRatio: number | null;
+  psRatio: number | null;
+  priceToSales: number | null;
+  evToEbitda: number | null;
+
+  // Leverage ratios
   debtToEquity: number | null;
   debtToEquityYoYGrowth: number | null;
   currentRatio: number | null;
   quickRatio: number | null;
-
   interestCoverage: number | null;
   assetTurnover: number | null;
 
+  // Dividend metrics
   dividendPerShare: number | null;
   dividendYield: number | null;
   dividendPayoutRatio: number | null;
 
-  operatingCashFlow: number | null;
-  freeCashFlow: number | null;
+  // Cash flow metrics
   cashConversion: number | null;
 
+  // Growth metrics
   revenueGrowth: number | null;
   profitGrowth: number | null;
   assetGrowth: number | null;
   equityGrowth: number | null;
 
+  // Working capital metrics
   receivablesDays: number | null;
   inventoryDays: number | null;
   payableDays: number | null;
@@ -76,6 +98,7 @@ export interface StockMetricsSummary {
   quarters: FinancialMetrics[];
 }
 
+// Helper functions for calculations
 function calculateRoe(netProfit: number | null, equity: number | null): number | null {
   if (netProfit === null || equity === null || equity === 0) return null;
   return (netProfit / equity) * 100;
@@ -89,32 +112,6 @@ function calculateRoce(
   if (ebit === null || totalAssets === null || currentLiabilities === null) return null;
   const capitalEmployed = totalAssets - (currentLiabilities || 0);
   if (capitalEmployed === 0) return null;
-  return (ebit / capitalEmployed) * 100;
-}
-
-function calculateRoeWithFallback(
-  profitLossForPeriod: number | null,
-  equityShareCapital: number | null,
-  otherEquity: number | null,
-  totalEquity: number | null
-): number | null {
-  const equity = totalEquity ?? ((equityShareCapital ?? 0) + (otherEquity ?? 0));
-  if (profitLossForPeriod === null || equity === 0) return null;
-  return (profitLossForPeriod / equity) * 100;
-}
-
-function calculateRoceWithFallback(
-  profitLossBeforeTax: number | null,
-  financeCosts: number | null,
-  totalAssets: number | null,
-  totalCurrentLiabilities: number | null,
-  totalNonCurrentLiabilities: number | null
-): number | null {
-  if (totalAssets === null || totalAssets === 0) return null;
-  const ebit = (profitLossBeforeTax ?? 0) + (financeCosts ?? 0);
-  const liabilities = (totalCurrentLiabilities ?? 0) + (totalNonCurrentLiabilities ?? 0);
-  const capitalEmployed = totalAssets - liabilities;
-  if (capitalEmployed === 0 || ebit === 0) return null;
   return (ebit / capitalEmployed) * 100;
 }
 
@@ -132,9 +129,8 @@ function calculateGrossMargin(
   revenue: number | null,
   costOfGoodsSold: number | null
 ): number | null {
-  if (revenue === null || costOfGoodsSold === null) return null;
+  if (revenue === null || costOfGoodsSold === null || revenue === 0) return null;
   const grossProfit = revenue - costOfGoodsSold;
-  if (revenue === 0) return null;
   return (grossProfit / revenue) * 100;
 }
 
@@ -188,22 +184,6 @@ function calculateBookValuePerShare(
   return equity / sharesOutstanding;
 }
 
-function calculateDividendYield(
-  dividendPerShare: number | null,
-  marketPrice: number | null
-): number | null {
-  if (dividendPerShare === null || marketPrice === null || marketPrice === 0) return null;
-  return (dividendPerShare / marketPrice) * 100;
-}
-
-function calculateDividendPayoutRatio(
-  dividendPerShare: number | null,
-  eps: number | null
-): number | null {
-  if (dividendPerShare === null || eps === null || eps === 0) return null;
-  return (dividendPerShare / eps) * 100;
-}
-
 function calculateYoYGrowth(current: number | null, previous: number | null): number | null {
   if (current === null || previous === null || previous === 0) return null;
   return ((current - previous) / Math.abs(previous)) * 100;
@@ -253,292 +233,299 @@ function calculateCashConversion(
   return (operatingCashFlow / netProfit) * 100;
 }
 
+// Fetch current price from cache (filled by batch worker) - no API calls
+async function fetchCurrentPrice(symbol: string): Promise<{ price: number; marketCap: number | null } | null> {
+  try {
+    const cached = await getStockData(symbol.toUpperCase());
+    if (cached && cached.price > 0) {
+      return {
+        price: cached.price,
+        marketCap: cached.marketCap > 0 ? cached.marketCap : null,
+      };
+    }
+    return null;
+  } catch (error) {
+    logger.warn(`Failed to get cached price for ${symbol}: ${(error as Error).message}`);
+    return null;
+  }
+}
+
 export async function computeMetrics(
   symbol: string,
   year?: number,
   consolidationType: 'Standalone' | 'Consolidated' = 'Standalone'
 ): Promise<StockMetricsSummary | null> {
   try {
-    const query: any = { symbol: symbol.toUpperCase(), consolidationType };
-    if (year) query.year = year;
+    const query: any = {
+      symbol: symbol.toUpperCase(),
+      consolidationType,
+    };
+    
+    if (year) {
+      query.year = year;
+    }
 
     const financials = await QuarterlyFinancial.find(query)
       .sort({ year: -1, quarter: -1 })
+      .limit(8)
       .lean();
 
-    if (financials.length === 0) {
-      logger.warn(`No MongoDB financials for ${symbol}, trying screener.in fallback`);
-      try {
-        const { fetchScreenerFinancials } = await import('./screenerFinancialService.js');
-        const scrapedData = await fetchScreenerFinancials(symbol);
-        if (scrapedData && scrapedData.quarters && scrapedData.quarters.length > 0) {
-          logger.info(`Got ${scrapedData.quarters.length} quarters from screener.in for ${symbol}`);
-          return scrapedData;
-        }
-      } catch (scrapeErr) {
-        logger.warn(`Screener fallback failed for ${symbol}: ${(scrapeErr as Error).message}`);
-      }
+    if (!financials || financials.length === 0) {
       return null;
     }
 
-    const companyName = financials[0].companyName;
+    const companyName = financials[0].companyName || symbol;
+    
+    // Fetch current price from yfinance
+    const priceData = await fetchCurrentPrice(symbol);
+    const currentPrice = priceData?.price || null;
+    const marketCapFromYahoo = priceData?.marketCap || null;
+
     const quarters: FinancialMetrics[] = [];
 
     for (let i = 0; i < financials.length; i++) {
       const q = financials[i];
-      const prev = financials[i + 1] || null;
+      const prev = financials[i + 1];
 
-      const revenue = q.revenueFromOperations;
-      const netProfit = q.profitLossForPeriod;
-      const profitBeforeTax = q.profitLossBeforeTax;
-      const totalAssets = q.totalAssets;
-      const totalEquity = q.totalEquity;
-      const totalLiabilities = q.totalLiabilities;
-      const currentAssets = q.totalCurrentAssets;
-      const currentLiabilities = q.totalCurrentLiabilities;
-      const borrowings = (q.borrowingsCurrent || 0) + (q.borrowingsNonCurrent || 0);
-      const financeCosts = q.financeCosts;
-      const inventories = q.inventories;
-      const tradeReceivables = q.tradeReceivablesCurrent;
-      const tradePayables = q.tradePayablesCurrent;
-      const cogs = q.costOfMaterialsConsumed;
-      const basicEps = q.basicEarningsLossPerShareFromContinuingAndDiscontinuedOperations;
-      const faceValue = q.faceValuePerShare;
-      const sharesOutstanding = q.numberOfSharesOutstanding;
-      const dividend = q.dividendPerShare;
-      const operatingCashFlow = q.cashFlowsFromUsedInOperatingActivities;
-      const freeCashFlow = q.freeCashFlow;
-      const equityShareCapital = q.equityShareCapital;
-      const otherEquity = q.otherEquity;
-      const totalNonCurrentLiabilities = q.totalNonCurrentLiabilities;
+      // Extract financial data (all in Crores)
+      const revenue = q.revenueFromOperations || 0;
+      const netProfit = q.profitLossForPeriod || 0;
+      const profitBeforeTax = q.profitLossBeforeTax || 0;
+      const financeCosts = q.financeCosts || 0;
+      const totalAssets = q.totalAssets || 0;
+      const totalEquity = q.totalEquity || 0;
+      const currentAssets = q.totalCurrentAssets || 0;
+      const currentLiabilities = q.totalCurrentLiabilities || 0;
+      const nonCurrentLiabilities = q.totalNonCurrentLiabilities || 0;
+      const inventories = q.inventories || 0;
+      const tradeReceivables = q.tradeReceivablesCurrent || 0;
+      const tradePayables = q.tradePayablesCurrent || 0;
+      const borrowingsCurrent = q.borrowingsCurrent || 0;
+      const borrowingsNonCurrent = q.borrowingsNonCurrent || 0;
+      const borrowings = borrowingsCurrent + borrowingsNonCurrent;
+      const costMaterials = q.costOfMaterialsConsumed || 0;
+      const basicEps = q.basicEarningsLossPerShareFromContinuingAndDiscontinuedOperations || 0;
+      const dividend = q.dividendPerShare || 0;
+      const faceValue = q.faceValuePerShare || 10;
+      const equityShareCapitalCr = q.equityShareCapital || 0;
+      const operatingCashFlow = q.cashFlowsFromUsedInOperatingActivities || 0;
+      const investingCashFlow = q.cashFlowsFromUsedInInvestingActivities || 0;
+      const freeCashFlow = q.freeCashFlow || (operatingCashFlow - Math.abs(investingCashFlow));
 
-      const revenuePrev = prev?.revenueFromOperations;
-      const profitPrev = prev?.profitLossForPeriod;
-      const assetsPrev = prev?.totalAssets;
-      const equityPrev = prev?.totalEquity;
-      const epsPrev = prev?.basicEarningsLossPerShareFromContinuingAndDiscontinuedOperations;
+      // Previous year data for YoY calculations
+      const revenuePrev = prev?.revenueFromOperations || null;
+      const profitPrev = prev?.profitLossForPeriod || null;
+      const assetsPrev = prev?.totalAssets || null;
+      const equityPrev = prev?.totalEquity || null;
 
-      const bookValuePerShare = calculateBookValuePerShare(totalEquity, sharesOutstanding);
-      const ebit = (q.profitLossBeforeTax || 0) + (financeCosts || 0);
+      // Calculate EBIT
+      const ebit = profitBeforeTax + financeCosts;
 
-    const metrics: FinancialMetrics = {
-      symbol: q.symbol,
-      companyName: q.companyName,
-      year: q.year,
-      quarter: q.quarter,
-      consolidationType: q.consolidationType,
+      // Calculate number of shares
+      let numberOfShares = null;
+      if (equityShareCapitalCr > 0 && faceValue > 0) {
+        numberOfShares = (equityShareCapitalCr * 10000000) / faceValue;
+      }
 
-      revenueFromOperations: revenue,
-      profitAfterTax: netProfit,
-      totalAssets: totalAssets,
-      totalEquity: totalEquity,
-      totalLiabilities: totalLiabilities,
-      borrowingsTotal: borrowings,
+      // Calculate market cap (in Crores)
+      let marketCap = marketCapFromYahoo;
+      if (!marketCap && currentPrice && numberOfShares) {
+        marketCap = (currentPrice * numberOfShares) / 10000000;
+      }
 
-      eps: basicEps,
-      epsYoYGrowth: calculateYoYGrowth(basicEps, epsPrev),
-      bookValuePerShare: bookValuePerShare,
-      faceValuePerShare: faceValue,
+      // Calculate book value per share
+      const bookValuePerShare = calculateBookValuePerShare(totalEquity * 10000000, numberOfShares);
 
-      roe: (() => {
-        const primary = calculateRoe(netProfit, totalEquity);
-        if (primary !== null) return primary;
-        return calculateRoeWithFallback(netProfit, equityShareCapital, otherEquity, totalEquity);
-      })(),
-      roeYoYGrowth: calculateYoYGrowth(
-        calculateRoe(netProfit, totalEquity),
-        calculateRoe(profitPrev, equityPrev)
-      ),
-      roce: (() => {
-        const primary = calculateRoce(ebit, totalAssets, currentLiabilities);
-        if (primary !== null) return primary;
-        return calculateRoceWithFallback(profitBeforeTax, financeCosts, totalAssets, currentLiabilities, totalNonCurrentLiabilities);
-      })(),
-      roceYoYGrowth: calculateYoYGrowth(
-        calculateRoce(ebit, totalAssets, currentLiabilities),
+      // Calculate valuation ratios (need current price)
+      const peRatio = currentPrice && basicEps ? currentPrice / basicEps : null;
+      const pbRatio = currentPrice && bookValuePerShare ? currentPrice / bookValuePerShare : null;
+      const annualRevenue = revenue * 4; // Quarterly to annual
+      const psRatio = marketCap && annualRevenue ? marketCap / annualRevenue : null;
+      
+      // Calculate dividend yield
+      const dividendYield = currentPrice && dividend ? (dividend / currentPrice) * 100 : null;
+
+      // Calculate profitability metrics
+      const roe = calculateRoe(netProfit, totalEquity);
+      const roce = calculateRoce(ebit, totalAssets, currentLiabilities);
+      const roa = calculateRoa(netProfit, totalAssets);
+      const netMargin = calculateNetMargin(netProfit, revenue);
+      const grossMargin = calculateGrossMargin(revenue, costMaterials);
+
+      // Calculate leverage metrics
+      const debtToEquity = calculateDebtToEquity(borrowings, totalEquity);
+      const currentRatio = calculateCurrentRatio(currentAssets, currentLiabilities);
+      const quickRatio = calculateQuickRatio(currentAssets, inventories, currentLiabilities);
+      const interestCoverage = calculateInterestCoverage(ebit, financeCosts);
+      const assetTurnover = calculateAssetTurnover(revenue, totalAssets);
+
+      // Calculate working capital metrics
+      const receivablesDays = calculateReceivablesDays(tradeReceivables, revenue);
+      const inventoryDays = calculateInventoryDays(inventories, costMaterials);
+      const payableDays = calculatePayableDays(tradePayables, costMaterials);
+      const cashConversionCycle = calculateCashConversionCycle(receivablesDays, inventoryDays, payableDays);
+
+      // Calculate cash flow metrics
+      const cashConversion = calculateCashConversion(operatingCashFlow, netProfit);
+      const dividendPayoutRatio = dividend && basicEps && basicEps > 0 ? (dividend / basicEps) * 100 : null;
+
+      // Calculate YoY growth
+      const revenueGrowth = calculateYoYGrowth(revenue, revenuePrev);
+      const profitGrowth = calculateYoYGrowth(netProfit, profitPrev);
+      const assetGrowth = calculateYoYGrowth(totalAssets, assetsPrev);
+      const equityGrowth = calculateYoYGrowth(totalEquity, equityPrev);
+      const epsYoYGrowth = calculateYoYGrowth(
+        basicEps,
+        prev?.basicEarningsLossPerShareFromContinuingAndDiscontinuedOperations || null
+      );
+      const roeYoYGrowth = calculateYoYGrowth(roe, calculateRoe(profitPrev, equityPrev));
+      const roceYoYGrowth = calculateYoYGrowth(
+        roce,
         calculateRoce(
-          ((prev?.profitLossBeforeTax || 0) + (prev?.financeCosts || 0)),
-          prev?.totalAssets,
-          prev?.totalCurrentLiabilities
+          (prev?.profitLossBeforeTax || 0) + (prev?.financeCosts || 0),
+          prev?.totalAssets || null,
+          prev?.totalCurrentLiabilities || null
         )
-      ),
-      roa: calculateRoa(netProfit, totalAssets),
-      roaYoYGrowth: calculateYoYGrowth(
-        calculateRoa(netProfit, totalAssets),
-        calculateRoa(profitPrev, assetsPrev)
-      ),
-
-      netMargin: calculateNetMargin(netProfit, revenue),
-      netMarginYoYGrowth: calculateYoYGrowth(
-        calculateNetMargin(netProfit, revenue),
-        calculateNetMargin(profitPrev, revenuePrev)
-      ),
-      grossMargin: calculateGrossMargin(revenue, cogs),
-
-      debtToEquity: calculateDebtToEquity(borrowings, totalEquity),
-      debtToEquityYoYGrowth: calculateYoYGrowth(
-        calculateDebtToEquity(borrowings, totalEquity),
+      );
+      const roaYoYGrowth = calculateYoYGrowth(roa, calculateRoa(profitPrev, assetsPrev));
+      const netMarginYoYGrowth = calculateYoYGrowth(netMargin, calculateNetMargin(profitPrev, revenuePrev));
+      const debtToEquityYoYGrowth = calculateYoYGrowth(
+        debtToEquity,
         calculateDebtToEquity(
-          ((prev?.borrowingsCurrent || 0) + (prev?.borrowingsNonCurrent || 0)),
-          prev?.totalEquity
+          (prev?.borrowingsCurrent || 0) + (prev?.borrowingsNonCurrent || 0),
+          prev?.totalEquity || null
         )
-      ),
-      currentRatio: calculateCurrentRatio(currentAssets, currentLiabilities),
-      quickRatio: calculateQuickRatio(currentAssets, inventories, currentLiabilities),
+      );
 
-      interestCoverage: calculateInterestCoverage(ebit, financeCosts),
-      assetTurnover: calculateAssetTurnover(revenue, totalAssets),
+      const metrics: FinancialMetrics = {
+        symbol,
+        companyName,
+        year: q.year,
+        quarter: q.quarter,
+        consolidationType: q.consolidationType,
 
-      dividendPerShare: dividend,
-      dividendYield: null,
-      dividendPayoutRatio: calculateDividendPayoutRatio(dividend, basicEps),
+        // Price data
+        currentPrice,
+        marketCap,
 
-      operatingCashFlow: operatingCashFlow,
-      freeCashFlow: freeCashFlow,
-      cashConversion: calculateCashConversion(operatingCashFlow, netProfit),
+        // Financial data
+        revenueFromOperations: revenue,
+        profitAfterTax: netProfit,
+        totalAssets,
+        totalEquity,
+        totalLiabilities: currentLiabilities + nonCurrentLiabilities,
+        borrowingsTotal: borrowings,
+        totalCurrentAssets: currentAssets,
+        totalCurrentLiabilities: currentLiabilities,
+        inventories,
+        operatingCashFlow,
+        freeCashFlow,
 
-      revenueGrowth: calculateYoYGrowth(revenue, revenuePrev),
-      profitGrowth: calculateYoYGrowth(netProfit, profitPrev),
-      assetGrowth: calculateYoYGrowth(totalAssets, assetsPrev),
-      equityGrowth: calculateYoYGrowth(totalEquity, equityPrev),
+        // Per-share metrics
+        eps: basicEps,
+        epsYoYGrowth,
+        bookValuePerShare,
+        faceValuePerShare: faceValue,
+        numberOfShares,
 
-      receivablesDays: calculateReceivablesDays(tradeReceivables, revenue),
-      inventoryDays: calculateInventoryDays(inventories, cogs),
-      payableDays: calculatePayableDays(tradePayables, cogs),
-      cashConversionCycle: calculateCashConversionCycle(
-        calculateReceivablesDays(tradeReceivables, revenue),
-        calculateInventoryDays(inventories, cogs),
-        calculatePayableDays(tradePayables, cogs)
-      ),
+        // Profitability ratios
+        roe,
+        roeYoYGrowth,
+        roce,
+        roceYoYGrowth,
+        roa,
+        roaYoYGrowth,
+        netMargin,
+        netMarginYoYGrowth,
+        grossMargin,
 
-      updatedAt: q.updatedAt,
-    };
+        // Valuation ratios
+        peRatio,
+        pbRatio,
+        psRatio,
+        priceToSales: psRatio,
+        evToEbitda: null, // Would need enterprise value calculation
 
-    quarters.push(metrics);
-  }
+        // Leverage ratios
+        debtToEquity,
+        debtToEquityYoYGrowth,
+        currentRatio,
+        quickRatio,
+        interestCoverage,
+        assetTurnover,
 
-  const latest = quarters[0] || null;
+        // Dividend metrics
+        dividendPerShare: dividend,
+        dividendYield,
+        dividendPayoutRatio,
 
-  const annualData = quarters.reduce(
-    (acc, q) => {
-      if (q.revenueFromOperations) acc.totalRevenue += q.revenueFromOperations;
-      if (q.profitAfterTax) acc.totalProfit += q.profitAfterTax;
-      if (q.totalAssets) acc.totalAssets += q.totalAssets;
-      if (q.totalEquity) acc.totalEquity += q.totalEquity;
-      if (q.roe) acc.roeSum += q.roe;
-      if (q.roce) acc.roceSum += q.roce;
-      if (q.netMargin) acc.netMarginSum += q.netMargin;
-      acc.count++;
-      return acc;
-    },
-    {
-      totalRevenue: 0,
-      totalProfit: 0,
-      totalAssets: 0,
-      totalEquity: 0,
-      roeSum: 0,
-      roceSum: 0,
-      netMarginSum: 0,
-      count: 0,
+        // Cash flow metrics
+        cashConversion,
+
+        // Growth metrics
+        revenueGrowth,
+        profitGrowth,
+        assetGrowth,
+        equityGrowth,
+
+        // Working capital metrics
+        receivablesDays,
+        inventoryDays,
+        payableDays,
+        cashConversionCycle,
+
+        updatedAt: q.updatedAt || new Date(),
+      };
+
+      quarters.push(metrics);
     }
-  );
 
-  return {
-    symbol,
-    companyName,
-    latest,
-    annual: {
-      totalRevenue: annualData.totalRevenue || null,
-      totalProfit: annualData.totalProfit || null,
-      totalAssets: annualData.totalAssets || null,
-      totalEquity: annualData.totalEquity || null,
-      avgRoe: annualData.count > 0 ? annualData.roeSum / annualData.count : null,
-      avgRoce: annualData.count > 0 ? annualData.roceSum / annualData.count : null,
-      avgNetMargin: annualData.count > 0 ? annualData.netMarginSum / annualData.count : null,
-    },
-    quarters,
-  };
+    const latest = quarters[0] || null;
+
+    const annualData = quarters.reduce(
+      (acc, q) => {
+        if (q.revenueFromOperations) acc.totalRevenue += q.revenueFromOperations;
+        if (q.profitAfterTax) acc.totalProfit += q.profitAfterTax;
+        if (q.totalAssets) acc.totalAssets = q.totalAssets; // Take latest
+        if (q.totalEquity) acc.totalEquity = q.totalEquity; // Take latest
+        if (q.roe) { acc.roeSum += q.roe; acc.roeCount++; }
+        if (q.roce) { acc.roceSum += q.roce; acc.roceCount++; }
+        if (q.netMargin) { acc.netMarginSum += q.netMargin; acc.netMarginCount++; }
+        return acc;
+      },
+      {
+        totalRevenue: 0,
+        totalProfit: 0,
+        totalAssets: 0,
+        totalEquity: 0,
+        roeSum: 0,
+        roeCount: 0,
+        roceSum: 0,
+        roceCount: 0,
+        netMarginSum: 0,
+        netMarginCount: 0,
+      }
+    );
+
+    return {
+      symbol,
+      companyName,
+      latest,
+      annual: {
+        totalRevenue: annualData.totalRevenue || null,
+        totalProfit: annualData.totalProfit || null,
+        totalAssets: annualData.totalAssets || null,
+        totalEquity: annualData.totalEquity || null,
+        avgRoe: annualData.roeCount > 0 ? annualData.roeSum / annualData.roeCount : null,
+        avgRoce: annualData.roceCount > 0 ? annualData.roceSum / annualData.roceCount : null,
+        avgNetMargin: annualData.netMarginCount > 0 ? annualData.netMarginSum / annualData.netMarginCount : null,
+      },
+      quarters,
+    };
   } catch (error) {
     logger.error(`Error in computeMetrics for ${symbol}: ${(error as Error).message}`, { stack: (error as Error).stack });
     throw error;
   }
-}
-
-export async function computeQuarterlyMetrics(
-  symbol: string,
-  year: number,
-  quarter: string,
-  consolidationType: 'Standalone' | 'Consolidated' = 'Standalone'
-): Promise<FinancialMetrics | null> {
-  const financials = await QuarterlyFinancial.findOne({
-    symbol: symbol.toUpperCase(),
-    year,
-    quarter,
-    consolidationType,
-  }).lean();
-
-  if (!financials) {
-    return null;
-  }
-
-  const prevQuarterly = await QuarterlyFinancial.findOne({
-    symbol: symbol.toUpperCase(),
-    year: quarter === 'Q1' ? year - 1 : year,
-    quarter: quarter === 'Q1' ? 'Q4' : `Q${parseInt(quarter.replace('Q', '')) - 1}` as any,
-    consolidationType,
-  }).lean();
-
-  const result = await computeMetrics(symbol, year, consolidationType);
-  return result?.latest || null;
-}
-
-export async function getAllStocksWithMetrics(
-  filter?: {
-    minRevenue?: number;
-    minMarketCap?: number;
-    sectors?: string[];
-  },
-  options?: {
-    limit?: number;
-    sortBy?: keyof FinancialMetrics;
-    sortOrder?: 'asc' | 'desc';
-  }
-): Promise<FinancialMetrics[]> {
-  const match: any = {};
-
-  if (filter?.minRevenue) {
-    match.revenueFromOperations = { $gte: filter.minRevenue };
-  }
-
-  const pipeline: any[] = [
-    { $match: match },
-    { $sort: { quarterEndDate: -1 } },
-    {
-      $group: {
-        _id: { symbol: '$symbol', consolidationType: '$consolidationType' },
-        doc: { $first: '$$ROOT' },
-      },
-    },
-    { $replaceRoot: { newRoot: '$doc' } },
-    { $limit: 100 },
-  ];
-
-  const financials = await QuarterlyFinancial.aggregate(pipeline);
-
-  const results: FinancialMetrics[] = [];
-  const processed = new Set<string>();
-
-  for (const f of financials) {
-    if (processed.has(f.symbol)) continue;
-    processed.add(f.symbol);
-
-    const result = await computeMetrics(f.symbol);
-    if (result?.latest) {
-      results.push(result.latest);
-    }
-  }
-
-  return results.slice(0, options?.limit || 100);
 }
 
 export async function searchStocksByMetrics(criteria: {
@@ -546,25 +533,41 @@ export async function searchStocksByMetrics(criteria: {
   maxRoe?: number;
   minRoce?: number;
   maxRoce?: number;
+  minRoa?: number;
   minNetMargin?: number;
   maxNetMargin?: number;
+  minGrossMargin?: number;
   minDebtToEquity?: number;
   maxDebtToEquity?: number;
   minCurrentRatio?: number;
+  maxCurrentRatio?: number;
+  minInterestCoverage?: number;
+  minPeRatio?: number;
+  maxPeRatio?: number;
+  minPbRatio?: number;
+  maxPbRatio?: number;
   minDividendYield?: number;
-  maxPe?: number;
   minRevenue?: number;
+  minMarketCap?: number;
+  maxMarketCap?: number;
+  minRevenueGrowth?: number;
+  minProfitGrowth?: number;
+  minEpsGrowth?: number;
   limit?: number;
 }): Promise<FinancialMetrics[]> {
-  const match: any = {};
-
-  const financials = await QuarterlyFinancial.find({
-    consolidationType: 'Standalone',
-    quarterEndDate: { $exists: true },
-  })
-    .sort({ quarterEndDate: -1 })
-    .limit(criteria.limit || 100)
-    .lean();
+  // Get latest financials for all stocks
+  const financials = await QuarterlyFinancial.aggregate([
+    { $match: { consolidationType: 'Standalone' } },
+    { $sort: { year: -1, quarter: -1 } },
+    {
+      $group: {
+        _id: '$symbol',
+        doc: { $first: '$$ROOT' },
+      },
+    },
+    { $replaceRoot: { newRoot: '$doc' } },
+    { $limit: criteria.limit || 200 },
+  ]);
 
   const results: FinancialMetrics[] = [];
   const processed = new Set<string>();
@@ -574,25 +577,44 @@ export async function searchStocksByMetrics(criteria: {
     if (processed.has(key)) continue;
     processed.add(key);
 
-    const result = await computeMetrics(f.symbol);
-    if (!result?.latest) continue;
+    try {
+      const result = await computeMetrics(f.symbol);
+      if (!result?.latest) continue;
 
-    const m = result.latest;
+      const m = result.latest;
 
-    if (criteria.minRoe !== undefined && (m.roe === null || m.roe < criteria.minRoe)) continue;
-    if (criteria.maxRoe !== undefined && (m.roe === null || m.roe > criteria.maxRoe)) continue;
-    if (criteria.minRoce !== undefined && (m.roce === null || m.roce < criteria.minRoce)) continue;
-    if (criteria.maxRoce !== undefined && (m.roce === null || m.roce > criteria.maxRoce)) continue;
-    if (criteria.minNetMargin !== undefined && (m.netMargin === null || m.netMargin < criteria.minNetMargin)) continue;
-    if (criteria.maxNetMargin !== undefined && (m.netMargin === null || m.netMargin > criteria.maxNetMargin)) continue;
-    if (criteria.minDebtToEquity !== undefined && (m.debtToEquity === null || m.debtToEquity < criteria.minDebtToEquity)) continue;
-    if (criteria.maxDebtToEquity !== undefined && (m.debtToEquity === null || m.debtToEquity > criteria.maxDebtToEquity)) continue;
-    if (criteria.minCurrentRatio !== undefined && (m.currentRatio === null || m.currentRatio < criteria.minCurrentRatio)) continue;
-    if (criteria.minRevenue !== undefined && (m.revenueFromOperations === null || m.revenueFromOperations < criteria.minRevenue)) continue;
+      // Apply filters
+      if (criteria.minRoe !== undefined && (m.roe === null || m.roe < criteria.minRoe)) continue;
+      if (criteria.maxRoe !== undefined && (m.roe === null || m.roe > criteria.maxRoe)) continue;
+      if (criteria.minRoce !== undefined && (m.roce === null || m.roce < criteria.minRoce)) continue;
+      if (criteria.maxRoce !== undefined && (m.roce === null || m.roce > criteria.maxRoce)) continue;
+      if (criteria.minRoa !== undefined && (m.roa === null || m.roa < criteria.minRoa)) continue;
+      if (criteria.minNetMargin !== undefined && (m.netMargin === null || m.netMargin < criteria.minNetMargin)) continue;
+      if (criteria.maxNetMargin !== undefined && (m.netMargin === null || m.netMargin > criteria.maxNetMargin)) continue;
+      if (criteria.minGrossMargin !== undefined && (m.grossMargin === null || m.grossMargin < criteria.minGrossMargin)) continue;
+      if (criteria.minDebtToEquity !== undefined && (m.debtToEquity === null || m.debtToEquity < criteria.minDebtToEquity)) continue;
+      if (criteria.maxDebtToEquity !== undefined && (m.debtToEquity === null || m.debtToEquity > criteria.maxDebtToEquity)) continue;
+      if (criteria.minCurrentRatio !== undefined && (m.currentRatio === null || m.currentRatio < criteria.minCurrentRatio)) continue;
+      if (criteria.maxCurrentRatio !== undefined && (m.currentRatio === null || m.currentRatio > criteria.maxCurrentRatio)) continue;
+      if (criteria.minInterestCoverage !== undefined && (m.interestCoverage === null || m.interestCoverage < criteria.minInterestCoverage)) continue;
+      if (criteria.minPeRatio !== undefined && (m.peRatio === null || m.peRatio < criteria.minPeRatio)) continue;
+      if (criteria.maxPeRatio !== undefined && (m.peRatio === null || m.peRatio > criteria.maxPeRatio)) continue;
+      if (criteria.minPbRatio !== undefined && (m.pbRatio === null || m.pbRatio < criteria.minPbRatio)) continue;
+      if (criteria.maxPbRatio !== undefined && (m.pbRatio === null || m.pbRatio > criteria.maxPbRatio)) continue;
+      if (criteria.minDividendYield !== undefined && (m.dividendYield === null || m.dividendYield < criteria.minDividendYield)) continue;
+      if (criteria.minRevenue !== undefined && (m.revenueFromOperations === null || m.revenueFromOperations < criteria.minRevenue)) continue;
+      if (criteria.minMarketCap !== undefined && (m.marketCap === null || m.marketCap < criteria.minMarketCap)) continue;
+      if (criteria.maxMarketCap !== undefined && (m.marketCap === null || m.marketCap > criteria.maxMarketCap)) continue;
+      if (criteria.minRevenueGrowth !== undefined && (m.revenueGrowth === null || m.revenueGrowth < criteria.minRevenueGrowth)) continue;
+      if (criteria.minProfitGrowth !== undefined && (m.profitGrowth === null || m.profitGrowth < criteria.minProfitGrowth)) continue;
+      if (criteria.minEpsGrowth !== undefined && (m.epsYoYGrowth === null || m.epsYoYGrowth < criteria.minEpsGrowth)) continue;
 
-    results.push(m);
+      results.push(m);
 
-    if (criteria.limit && results.length >= criteria.limit) break;
+      if (criteria.limit && results.length >= criteria.limit) break;
+    } catch (error) {
+      logger.warn(`Failed to compute metrics for ${f.symbol}: ${(error as Error).message}`);
+    }
   }
 
   return results;

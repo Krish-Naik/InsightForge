@@ -64,8 +64,8 @@ export const config: Config = {
     expire: process.env.JWT_EXPIRE || '7d',
   },
   rateLimit: {
-    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS   || '900000', 10),
-    max:      parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '200',    10),
+    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS   || '600000', 10),
+    max:      parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '1000',   10),
   },
   ai: {
     enabled: Boolean(aiApiKey),

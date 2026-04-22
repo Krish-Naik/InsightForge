@@ -828,13 +828,20 @@ export class YahooFinanceService {
     if (indicesResult.status === 'rejected') logger.warn(`getMarketSummary indices failed: ${(indicesResult.reason as Error).message}`);
     if (quotesResult.status  === 'rejected') logger.warn(`getMarketSummary quotes failed: ${(quotesResult.reason as Error).message}`);
 
-    const usable = quotes.filter((quote) => quote.price > 0);
+    // Deduplicate by symbol - keep first occurrence
+    const seen = new Set<string>();
+    const uniqueQuotes = quotes.filter(q => {
+      if (seen.has(q.symbol)) return false;
+      seen.add(q.symbol);
+      return q.price > 0;
+    });
+
     const topMoversCount = 50;
     const summary = {
       indices,
-      gainers: [...usable].sort((left, right) => right.changePercent - left.changePercent).slice(0, topMoversCount),
-      losers: [...usable].sort((left, right) => left.changePercent - right.changePercent).slice(0, topMoversCount),
-      mostActive: [...usable].sort((left, right) => right.volume - left.volume).slice(0, topMoversCount),
+      gainers: [...uniqueQuotes].sort((left, right) => right.changePercent - left.changePercent).slice(0, topMoversCount),
+      losers: [...uniqueQuotes].sort((left, right) => left.changePercent - right.changePercent).slice(0, topMoversCount),
+      mostActive: [...uniqueQuotes].sort((left, right) => right.volume - left.volume).slice(0, topMoversCount),
       lastUpdated: new Date().toISOString(),
       marketStatus: indices.find((index) => index.price > 0)?.marketState || 'REGULAR',
     };
@@ -848,6 +855,8 @@ export class YahooFinanceService {
       this.getIndices(),
       this.getMarketSummary(),
       this.getAllSectorsData(),
+      // Also cache popular stocks so fundamentals/screener don't need live API calls
+      this.getQuotes([...NIFTY_50_STOCKS].slice(0, 50)),
     ]);
   }
 }

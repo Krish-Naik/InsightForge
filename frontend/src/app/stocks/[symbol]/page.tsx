@@ -8,7 +8,6 @@ import { HistoricalSeriesChart } from '@/components/charts/HistoricalSeriesChart
 import { StoryTimeline } from '@/components/ui/insight-kit';
 import { SymbolLink } from '@/components/ui/SymbolLink';
 import { EmptyPanel, MetricTile, PageHeader, SectionCard, TrendBadge } from '@/components/ui/page-kit';
-import { FinancialDataSection } from '@/components/ui/FinancialDataSection';
 import { FinancialInsightSection } from '@/components/ui/FinancialInsightSection';
 import { PriceInsightSection } from '@/components/ui/PriceInsightSection';
 import { marketAPI, type StockResearch } from '@/lib/api';
@@ -134,8 +133,6 @@ export default function StockStoryPage() {
           )}
 
           <PriceInsightSection symbol={symbol} />
-
-          <FinancialDataSection symbol={symbol} />
 
           <div className="workbench-grid">
             <div className="workbench-column">

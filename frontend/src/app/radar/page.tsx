@@ -173,14 +173,14 @@ function SignalCard({ card }: { card: RadarSignalCard }) {
         <ConfidenceBar value={card.confidence} />
       </div>
 
-      {/* Entry / Stop / Target */}
-      {(card.entryZone || card.stopLoss || card.target) && (
+      {/* Support / Resistance Levels */}
+      {(card.support || card.resistance) && (
         <div style={{ display: 'flex', background: 'var(--bg-2)', borderRadius: 8, padding: '8px 0', gap: 0 }}>
-          <PriceLevel label="Entry"    value={card.entryZone}  color="var(--text-1)" />
+          <PriceLevel label="Support"    value={card.support}    color="var(--green)" />
           <div style={{ width: 1, background: 'var(--border)' }} />
-          <PriceLevel label="Stop"     value={card.stopLoss}   color="var(--red)" />
+          <PriceLevel label="Current"      value={card.currentPrice} color="var(--text-1)" />
           <div style={{ width: 1, background: 'var(--border)' }} />
-          <PriceLevel label="Target"   value={card.target}     color="var(--green)" />
+          <PriceLevel label="Resistance" value={card.resistance}  color="var(--red)" />
         </div>
       )}
 

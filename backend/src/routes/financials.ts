@@ -13,7 +13,11 @@ router.use(apiLimiter);
 router.get('/summary', financialController.getSummary);
 router.get('/search', financialController.searchByMetrics);
 router.get('/screener', financialController.getScreenerData);
+router.post('/screener/run', financialController.runAdvancedScreener);
 router.get('/import', financialController.importFinancials);
+
+// Add the missing profile route
+router.get('/profile/:symbol', financialController.getFinancialProfile);
 
 router.get('/metrics/:symbol', financialController.getMetrics);
 router.get('/metrics/:symbol/:year/:quarter', financialController.getQuarterlyMetrics);

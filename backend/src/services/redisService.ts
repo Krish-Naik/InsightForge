@@ -58,6 +58,42 @@ class RedisClient {
     });
     return { connected: this.isConnected };
   }
+
+  async get(key: string): Promise<string | null> {
+    if (!this.client || !this.isConnected) return null;
+    try {
+      return await this.client.get(key);
+    } catch (error) {
+      logger.warn(`Redis get error: ${(error as Error).message}`);
+      return null;
+    }
+  }
+
+  async set(key: string, value: string, ttlSeconds?: number): Promise<boolean> {
+    if (!this.client || !this.isConnected) return false;
+    try {
+      if (ttlSeconds) {
+        await this.client.set(key, value, 'EX', ttlSeconds);
+      } else {
+        await this.client.set(key, value);
+      }
+      return true;
+    } catch (error) {
+      logger.warn(`Redis set error: ${(error as Error).message}`);
+      return false;
+    }
+  }
+
+  async del(key: string): Promise<boolean> {
+    if (!this.client || !this.isConnected) return false;
+    try {
+      await this.client.del(key);
+      return true;
+    } catch (error) {
+      logger.warn(`Redis del error: ${(error as Error).message}`);
+      return false;
+    }
+  }
 }
 
 export const redisClient = new RedisClient();

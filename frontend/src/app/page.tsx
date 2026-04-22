@@ -465,10 +465,10 @@ export default function TodayPage() {
                             <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-mono)' }}>{q.symbol}</div>
                             <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>{q.name}</div>
                           </div>
-                          <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: 11, color: 'var(--text-2)' }}>Vol</div>
-                            <div style={{ fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{formatLargeNumber(q.volume)}</div>
-                          </div>
+<div style={{ textAlign: 'right' }}>
+                             <div style={{ fontSize: 11, color: 'var(--text-2)' }}>Traded</div>
+                             <div style={{ fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>₹{formatLargeNumber((q.price || 0) * (q.volume || 0))}</div>
+                           </div>
                         </div>
                       </Link>
                     ))}

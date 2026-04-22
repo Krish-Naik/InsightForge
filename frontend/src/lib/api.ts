@@ -304,6 +304,7 @@ export interface RadarSignalCard {
   strength:       RadarSignalStrength;
   confidence:     number;
   price:          number;
+  currentPrice:   number | null;
   changePercent:  number;
   volume:         number;
   volumeRatio:    number;
@@ -312,6 +313,8 @@ export interface RadarSignalCard {
   entryZone:      number | null;
   stopLoss:       number | null;
   target:         number | null;
+  support:        number | null;
+  resistance:     number | null;
   whyNow:         string;
   sector:         string;
   timestamp:      string;
@@ -709,6 +712,39 @@ export const financialsAPI = {
     api.get(`/financials/metrics/${encodeURIComponent(symbol)}`, { params: options }),
   getQuarterlyMetrics: (symbol: string, year: number, quarter: string, consolidationType?: string): Promise<any> =>
     api.get(`/financials/metrics/${encodeURIComponent(symbol)}/${year}/${quarter}`, { params: { consolidationType } }),
+  getFinancialProfile: (symbol: string, consolidationType?: string): Promise<any> =>
+    api.get(`/financials/profile/${encodeURIComponent(symbol)}`, { params: { consolidationType } }),
+  runAdvancedScreener: (filters: {
+    minPrice?: number;
+    maxPrice?: number;
+    minMarketCap?: number;
+    maxMarketCap?: number;
+    minPe?: number;
+    maxPe?: number;
+    minPb?: number;
+    maxPb?: number;
+    minRoe?: number;
+    maxRoe?: number;
+    minRoce?: number;
+    minRoa?: number;
+    minNetMargin?: number;
+    maxNetMargin?: number;
+    minGrossMargin?: number;
+    minDebtToEquity?: number;
+    maxDebtToEquity?: number;
+    minCurrentRatio?: number;
+    maxCurrentRatio?: number;
+    minInterestCoverage?: number;
+    minRevenueGrowth?: number;
+    minProfitGrowth?: number;
+    minEpsGrowth?: number;
+    minDividendYield?: number;
+    minDividendPayout?: number;
+    minOperatingCashFlow?: number;
+    sector?: string;
+    limit?: number;
+  }): Promise<any[]> =>
+    api.post('/financials/screener/run', filters),
   getInsight: (symbol: string): Promise<{
     symbol: string;
     summary: string;

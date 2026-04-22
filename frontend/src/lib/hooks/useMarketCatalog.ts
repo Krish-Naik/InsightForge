@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { marketAPI, type CatalogStock, type MarketCatalog } from '@/lib/api';
 
+export type { CatalogStock, MarketCatalog };
+
 let cachedCatalog: MarketCatalog | null = null;
 let inflightCatalog: Promise<MarketCatalog> | null = null;
 

@@ -36,6 +36,9 @@ export interface Quote {
   instrumentKey?: string;
   isin?: string;
   isStale?: boolean;
+  peRatio?: number | null;
+  priceToBook?: number | null;
+  dividendYield?: number | null;
 }
 
 export interface ScreenerMetric {

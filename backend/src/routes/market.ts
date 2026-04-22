@@ -1,9 +1,7 @@
 import { Router } from 'express';
 import { marketController } from '../controllers/marketController.js';
-import { apiLimiter } from '../middleware/rateLimiter.js';
 
 const router = Router();
-router.use(apiLimiter);
 
 router.get('/indices',                     marketController.getIndices);
 router.get('/indices/list',                marketController.getIndicesList);
