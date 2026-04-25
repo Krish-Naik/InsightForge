@@ -30,8 +30,8 @@ const monoFont = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title:       'InsightForge — Intelligent Trading Companion',
-  description: 'Decision-first market companion for Indian retail traders — ranked opportunities, market narratives, sector rotation, watchlists, and recap.',
-  keywords:    'NSE, BSE, Indian stocks, trading companion, stock stories, market narratives, sector rotation, watchlist, recap',
+  description: 'Decision-first market companion for Indian retail traders — ranked opportunities, market narratives, sector rotation, and watchlists.',
+  keywords:    'NSE, BSE, Indian stocks, trading companion, stock stories, market narratives, sector rotation, watchlist',
 };
 
 export const viewport: Viewport = {
@@ -44,6 +44,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" suppressHydrationWarning>
       <head>
         <link rel="icon" href="/favicon.ico" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                var theme = localStorage.getItem('theme');
+                if (theme) document.documentElement.setAttribute('data-theme', theme);
+              })();
+            `,
+          }}
+        />
       </head>
       <body className={`${displayFont.variable} ${bodyFont.variable} ${monoFont.variable}`}>
         <MarketStreamProvider>

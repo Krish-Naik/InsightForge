@@ -68,9 +68,9 @@ export default function NewsPage() {
   return (
     <div className="page">
       <PageHeader
-        kicker="Story Feed"
-        title="Narratives that can actually change behavior"
-        description="This is a compact market story desk. Use it to connect headlines to sectors, symbols, and the behavior they might change."
+        kicker="News"
+        title="News"
+        description="Market news and stories that impact trading decisions."
         actions={
           <button onClick={() => void loadNews()} disabled={refreshing} className="btn btn-ghost">
             <RefreshCw style={{ width: 14, height: 14 }} className={refreshing ? 'anim-spin' : ''} />

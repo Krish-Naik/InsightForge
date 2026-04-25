@@ -20,6 +20,13 @@ export interface Config {
     model: string;
     timeoutMs: number;
   };
+  smtp: {
+    host: string;
+    port: number;
+    user: string;
+    pass: string;
+    from: string;
+  };
   isProd: boolean;
   isDev:  boolean;
 }
@@ -74,6 +81,13 @@ export const config: Config = {
     baseUrl: process.env.AI_INSIGHTS_BASE_URL || defaultBaseUrl,
     model: process.env.AI_INSIGHTS_MODEL || defaultModel,
     timeoutMs: parseInt(process.env.AI_INSIGHTS_TIMEOUT_MS || '12000', 10),
+  },
+  smtp: {
+    host: process.env.SMTP_HOST || '',
+    port: parseInt(process.env.SMTP_PORT || '587', 10),
+    user: process.env.SMTP_USER || '',
+    pass: process.env.SMTP_PASS || '',
+    from: process.env.SMTP_FROM || 'StockPulse <noreply@stockpulse.app>',
   },
   isProd: process.env.NODE_ENV === 'production',
   isDev:  process.env.NODE_ENV !== 'production',

@@ -1,6 +1,5 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
-import { ActivitySquare, Wifi, WifiOff } from 'lucide-react';
 import { marketAPI } from '@/lib/api';
 import { formatCurrency, formatPercent } from '@/lib/format';
 import { useMarketStream } from '@/lib/hooks/useMarketStream';
@@ -71,16 +70,6 @@ export function MarketTicker() {
   return (
     <div className="ticker-bar">
       <div className="ticker-inner">
-        <div className="topbar-pill" style={{ color: connected ? 'var(--green)' : 'var(--text-2)' }}>
-          {connected ? <Wifi style={{ width: 12, height: 12 }} /> : <WifiOff style={{ width: 12, height: 12 }} />}
-          {connected ? 'Live' : 'Polling'}
-        </div>
-
-        <div className="topbar-pill">
-          <ActivitySquare style={{ width: 12, height: 12, color: 'var(--text-2)' }} />
-          Delayed data
-        </div>
-
         <div className="ticker-track">
           <div className="ticker-strip">
           {doubled.map((item, i) => {

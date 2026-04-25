@@ -17,7 +17,7 @@ import {
 import { SymbolLink } from '@/components/ui/SymbolLink';
 import { EmptyPanel, MetricTile, PageHeader, SectionCard, TrendBadge } from '@/components/ui/page-kit';
 import { marketAPI, portfolioAPI, type Quote, type SearchResult, type StockStory, type SupportResistanceLevel } from '@/lib/api';
-import { formatCurrency, formatPercent, formatIST } from '@/lib/format';
+import { formatCurrency, formatPercent } from '@/lib/format';
 import { searchCatalogStocks, useMarketCatalog } from '@/lib/hooks/useMarketCatalog';
 import { useDebounce } from '@/lib/hooks/useDebounce';
 
@@ -234,11 +234,10 @@ export default function WatchlistPage() {
     <div className="page">
       <PageHeader
         kicker="Watchlist"
-        title="Market Watchlist"
+        title="Watchlist"
         description="Track stocks with AI insights"
         actions={
           <div style={{ display: 'flex', gap: 10 }}>
-            {lastUpdated && <span className="topbar-pill">Updated {formatIST(lastUpdated)}</span>}
             <button onClick={fetchQuotes} disabled={loadingQuotes} className="btn btn-ghost">
               <RefreshCw style={{ width: 14, height: 14 }} className={loadingQuotes ? 'anim-spin' : ''} />
             </button>

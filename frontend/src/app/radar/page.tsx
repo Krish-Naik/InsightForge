@@ -14,14 +14,14 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import {
   Activity, AlertTriangle, ArrowRight, BarChart2, BarChart3,
-  ChevronDown, ChevronUp, Clock, RefreshCw, Shield,
+  ChevronDown, ChevronUp, RefreshCw, Shield,
   Target, TrendingDown, TrendingUp, Zap,
 } from 'lucide-react';
 import {
   marketAPI,
   type RadarSignalCard, type RadarSignalType, type RadarSnapshot,
 } from '@/lib/api';
-import { formatCurrency, formatLargeNumber, formatPercent, formatTimeAgo } from '@/lib/format';
+import { formatCurrency, formatLargeNumber, formatPercent } from '@/lib/format';
 
 // ── Signal tab config ─────────────────────────────────────────────────────────
 type SignalTab = 'all' | RadarSignalType;
@@ -310,19 +310,13 @@ export default function RadarPage() {
       <div className="page-header">
         <div>
           <div className="page-kicker">Radar</div>
-          <h1 className="page-title">Signal Intelligence</h1>
+          <h1 className="page-title">Market Mover</h1>
           <p className="page-subtitle">
             Auto-detected trading signals ranked by confidence — breakouts, breakdowns, RSI extremes,
             volume spikes, and momentum surges. Entry, stop, and target levels included.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {snapshot?.generatedAt && (
-            <span className="topbar-pill">
-              <Clock style={{ width: 11, height: 11 }} />
-              {formatTimeAgo(snapshot.generatedAt)}
-            </span>
-          )}
           <button onClick={() => void load()} disabled={refreshing} className="btn btn-primary" style={{ padding: '8px 16px' }}>
             <RefreshCw style={{ width: 13, height: 13 }} className={refreshing ? 'anim-spin' : ''} />
             Refresh

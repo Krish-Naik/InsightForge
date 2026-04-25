@@ -1,11 +1,8 @@
 'use client';
 import Link from 'next/link';
-import { BrainCircuit, Sparkles, Waves, TrendingUp } from 'lucide-react';
-import { useMarketStream } from '@/lib/hooks/useMarketStream';
+import { TrendingUp } from 'lucide-react';
 
 export function Header() {
-  const { connected } = useMarketStream(true);
-
   return (
     <header className="topbar">
       <div className="topbar-inner">
@@ -15,28 +12,8 @@ export function Header() {
           </span>
           <span>
             <span className="brand-title">InsightForge</span>
-            <span className="brand-subtitle">Decision companion for Indian traders</span>
           </span>
         </Link>
-
-        <div className="topbar-meta">
-          <span className="topbar-pill">
-            <span className={`status-dot ${connected ? 'is-live' : ''}`} />
-            {connected ? 'Live data' : 'Cached mode'}
-          </span>
-          <span className="topbar-pill">
-            <Waves style={{ width: 12, height: 12, color: 'var(--text-2)' }} />
-            Ranked brief
-          </span>
-          <span className="topbar-pill">
-            <BrainCircuit style={{ width: 12, height: 12, color: 'var(--text-2)' }} />
-            AI insights
-          </span>
-          <span className="topbar-pill">
-            <Sparkles style={{ width: 12, height: 12, color: 'var(--text-2)' }} />
-            Cached feed
-          </span>
-        </div>
       </div>
     </header>
   );

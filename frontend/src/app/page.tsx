@@ -219,8 +219,39 @@ export default function TodayPage() {
   const loadMovers = useCallback(async () => {
     setMoversLoading(true);
     try {
-      const data = await marketAPI.getMovers(capFilter);
-      setMovers(data);
+      const data = await marketAPI.getMovers(capFilter === 'all' ? 'all' : capFilter);
+      
+      const seen = new Set<string>();
+      const uniqueGainers: any[] = [];
+      const uniqueLosers: any[] = [];
+      const uniqueVolume: any[] = [];
+      
+      for (const q of data.gainers || []) {
+        if (uniqueGainers.length < 10 && !seen.has(q.symbol)) {
+          seen.add(q.symbol);
+          uniqueGainers.push(q);
+        }
+      }
+      
+      for (const q of data.losers || []) {
+        if (uniqueLosers.length < 10 && !seen.has(q.symbol)) {
+          seen.add(q.symbol);
+          uniqueLosers.push(q);
+        }
+      }
+      
+      for (const q of data.volumeLeaders || []) {
+        if (uniqueVolume.length < 10 && !seen.has(q.symbol)) {
+          seen.add(q.symbol);
+          uniqueVolume.push(q);
+        }
+      }
+      
+      setMovers({ 
+        gainers: uniqueGainers, 
+        losers: uniqueLosers, 
+        volumeLeaders: uniqueVolume 
+      });
     } catch (e) {
       console.error('Failed to load movers:', e);
     } finally {
@@ -262,20 +293,13 @@ export default function TodayPage() {
       <div className="page-header">
         <div>
           <div className="page-kicker">Today</div>
-          <h1 className="page-title">Market Snapshot</h1>
+          <h1 className="page-title">Market Overview</h1>
           <p className="page-subtitle">
             What is happening in the market today — indices, sectors, breadth, and news.
             Trading signals and setups live on the <Link href="/radar" style={{ color: 'var(--accent)' }}>Radar page</Link>.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <span className="topbar-pill">
-            <span className={`status-dot ${connected ? 'is-live' : ''}`} />
-            {connected ? 'Live' : 'Delayed'}
-          </span>
-          {desk?.generatedAt && (
-            <span className="topbar-pill">Updated {formatTimeAgo(desk.generatedAt)}</span>
-          )}
           <button onClick={() => void load()} disabled={refreshing} className="btn btn-ghost">
             <RefreshCw style={{ width: 13, height: 13 }} className={refreshing ? 'anim-spin' : ''} />
             Refresh

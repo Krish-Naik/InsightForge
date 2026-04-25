@@ -18,7 +18,7 @@ import {
 import { SymbolLink } from '@/components/ui/SymbolLink';
 import { EmptyPanel, MetricTile, PageHeader, SectionCard, TrendBadge } from '@/components/ui/page-kit';
 import { marketAPI, portfolioAPI, type PortfolioRecord, type Quote, type SearchResult } from '@/lib/api';
-import { formatCurrency, formatPercent, formatIST } from '@/lib/format';
+import { formatCurrency, formatPercent } from '@/lib/format';
 import { searchCatalogStocks, useMarketCatalog } from '@/lib/hooks/useMarketCatalog';
 import { useDebounce } from '@/lib/hooks/useDebounce';
 import { isLocalPersistenceMode } from '@/lib/runtime';
@@ -122,14 +122,12 @@ export default function PortfolioPage() {
         const nextPortfolios = remotePortfolios.map(mapPortfolioRecord);
         if (cancelled) return;
         setPersistenceMode('cloud');
-        setStatusMessage('Workspace synced with Mongo-backed portfolios.');
         setPortfolios(nextPortfolios);
         setActiveId(nextPortfolios[0]?.id || '1');
       } catch (error) {
         const nextPortfolios = loadPortfolios();
         if (cancelled) return;
         setPersistenceMode('local');
-        setStatusMessage(`${(error as Error).message} Falling back to local storage.`);
         setPortfolios(nextPortfolios);
         setActiveId(nextPortfolios[0]?.id || '1');
         resetWorkspaceSession();
@@ -376,7 +374,6 @@ export default function PortfolioPage() {
         description="Track holdings, sector allocation, and performance across the active book."
         actions={
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            {lastUpdated ? <span className="topbar-pill">Updated {formatIST(lastUpdated)}</span> : null}
             <button onClick={fetchQuotes} disabled={loadingQuotes} className="btn btn-ghost">
               <RefreshCw style={{ width: 14, height: 14 }} className={loadingQuotes ? 'anim-spin' : ''} />
             </button>
@@ -437,9 +434,9 @@ export default function PortfolioPage() {
         </button>
       </div>
 
-      {bootstrapping || statusMessage ? (
+      {bootstrapping ? (
         <div className="metric-footnote" style={{ marginTop: 12 }}>
-          {bootstrapping ? 'Preparing workspace session and persistence layer...' : statusMessage}
+          Preparing workspace session and persistence layer...
         </div>
       ) : null}
 
@@ -500,57 +497,6 @@ export default function PortfolioPage() {
                 </div>
               ) : null}
             </div>
-          </SectionCard>
-        </div>
-
-        <div className="workbench-column">
-          <SectionCard title="Allocation" subtitle="Current sector exposure by marked value" icon={PieChart}>
-            {allocation.length ? (
-              <div className="stack-16">
-                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 120 }}>
-                  {allocation.map(([sector, value], index) => {
-                    const weight = totals.current > 0 ? (value / totals.current) * 100 : 0;
-                    const barHeight = Math.max(weight * 1.2, 8);
-                    const colors = ['#d99a4f', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899', '#ef4444', '#14b8a6', '#f59e0b'];
-                    const color = colors[index % colors.length];
-                    return (
-                      <div key={sector} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-                        <div style={{ fontSize: 10, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>{weight.toFixed(1)}%</div>
-                        <div
-                          style={{
-                            width: '100%',
-                            height: barHeight,
-                            background: `linear-gradient(180deg, ${color}, ${color}88)`,
-                            borderRadius: 4,
-                            minHeight: 8,
-                          }}
-                          title={sector}
-                        />
-                        <div style={{ fontSize: 9, color: 'var(--text-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{sector}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="panel-scroll-tight stack-8">
-                  {allocation.map(([sector, value]) => {
-                    const weight = totals.current > 0 ? (value / totals.current) * 100 : 0;
-                    return (
-                      <div key={sector} className="list-card">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
-                          <div>
-                            <div style={{ fontSize: 12, fontWeight: 700 }}>{sector}</div>
-                            <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>{formatCurrency(value)}</div>
-                          </div>
-                          <TrendBadge tone="primary">{weight.toFixed(1)}%</TrendBadge>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : (
-              <EmptyPanel title="No allocation yet" description="Sector allocation appears once you add holdings to the portfolio." icon={PieChart} />
-            )}
           </SectionCard>
 
           <SectionCard title="Holdings" subtitle="Cost basis, current value, and performance across the active book" icon={Wallet}>
@@ -635,6 +581,57 @@ export default function PortfolioPage() {
               </div>
             ) : (
               <EmptyPanel title="No holdings yet" description="Open the composer and add a few positions to start tracking your portfolio." icon={Wallet} />
+            )}
+          </SectionCard>
+        </div>
+
+        <div className="workbench-column">
+          <SectionCard title="Allocation" subtitle="Current sector exposure by marked value" icon={PieChart}>
+            {allocation.length ? (
+              <div className="stack-16">
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 120 }}>
+                  {allocation.map(([sector, value], index) => {
+                    const weight = totals.current > 0 ? (value / totals.current) * 100 : 0;
+                    const barHeight = Math.max(weight * 1.2, 8);
+                    const colors = ['#d99a4f', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899', '#ef4444', '#14b8a6', '#f59e0b'];
+                    const color = colors[index % colors.length];
+                    return (
+                      <div key={sector} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                        <div style={{ fontSize: 10, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>{weight.toFixed(1)}%</div>
+                        <div
+                          style={{
+                            width: '100%',
+                            height: barHeight,
+                            background: `linear-gradient(180deg, ${color}, ${color}88)`,
+                            borderRadius: 4,
+                            minHeight: 8,
+                          }}
+                          title={sector}
+                        />
+                        <div style={{ fontSize: 9, color: 'var(--text-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{sector}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="panel-scroll-tight stack-8">
+                  {allocation.map(([sector, value]) => {
+                    const weight = totals.current > 0 ? (value / totals.current) * 100 : 0;
+                    return (
+                      <div key={sector} className="list-card">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 700 }}>{sector}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>{formatCurrency(value)}</div>
+                          </div>
+                          <TrendBadge tone="primary">{weight.toFixed(1)}%</TrendBadge>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <EmptyPanel title="No allocation yet" description="Sector allocation appears once you add holdings to the portfolio." icon={PieChart} />
             )}
           </SectionCard>
 
