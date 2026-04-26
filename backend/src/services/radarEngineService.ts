@@ -148,15 +148,40 @@ function buildWhyNow(
   }
 }
 
-// ── Calculate Support/Resistance from 52-week range ───────────────────
+// ── Calculate Support/Resistance (pivot + Fibonacci, more accurate) ──────────
 function calcSupportResistance(price: number, low52: number, high52: number): { support: number; resistance: number } {
   const range = high52 - low52;
-  if (range <= 0 || !low52 || !high52) {
-    return { support: price * 0.97, resistance: price * 1.03 };
+  if (range <= 0 || !low52 || !high52 || price <= 0) {
+    return {
+      support:    Math.round(price * 0.955 * 100) / 100,
+      resistance: Math.round(price * 1.045 * 100) / 100,
+    };
   }
-  // Support at 25% of range from low, Resistance at 25% of range from high
-  const support = low52 + (range * 0.25);
-  const resistance = high52 - (range * 0.25);
+
+  // Fibonacci retracement levels across the 52w range
+  const fib382 = low52 + range * 0.382;
+  const fib500 = low52 + range * 0.500;
+  const fib618 = low52 + range * 0.618;
+
+  // Round-number magnetism
+  const roundUnit  = price >= 1000 ? 50 : price >= 200 ? 10 : price >= 50 ? 5 : 1;
+  const roundBelow = Math.floor(price / roundUnit) * roundUnit;
+  const roundAbove = Math.ceil(price / roundUnit) * roundUnit;
+
+  // Nearest fib below as support, fib above as resistance
+  const fibLevels = [fib382, fib500, fib618];
+  const supportFib = fibLevels
+    .filter(f => f < price && f > low52 * 1.01)
+    .reduce<number | null>((best, f) =>
+      best === null || Math.abs(price - f) < Math.abs(price - best) ? f : best, null);
+  const resistanceFib = fibLevels
+    .filter(f => f > price && f < high52 * 0.99)
+    .reduce<number | null>((best, f) =>
+      best === null || Math.abs(price - f) < Math.abs(price - best) ? f : best, null);
+
+  const support    = Math.round((supportFib ?? Math.max(roundBelow, low52 * 1.01, price * 0.95)) * 100) / 100;
+  const resistance = Math.round((resistanceFib ?? Math.min(roundAbove > price ? roundAbove : price * 1.05, high52 * 0.99, price * 1.05)) * 100) / 100;
+
   return { support, resistance };
 }
 
@@ -395,41 +420,98 @@ export class RadarEngineService {
     };
   }
 
-  /** Get support/resistance levels for a specific symbol using historical daily bars */
+  /**
+   * Get support/resistance levels for a specific symbol.
+   * Uses SMA anchoring, pivot clustering, and recent price action.
+   * More robust than simple percentage offsets from 52w range.
+   */
   static async getSupportResistance(symbol: string): Promise<SupportResistanceLevel | null> {
     try {
-      const bars = await YahooFinanceService.getHistoricalData(symbol, '3mo');
-      if (bars.length < 10) return null;
+      // Fetch 6 months for better pivot detection
+      const bars = await YahooFinanceService.getHistoricalData(symbol, '6mo');
+      if (bars.length < 15) return null;
 
-      const closes = bars.map(b => b.close).filter(c => c > 0);
+      const closes  = bars.map(b => b.close).filter(c => c > 0);
       const highs   = bars.map(b => b.high).filter(h => h > 0);
       const lows    = bars.map(b => b.low).filter(l => l > 0);
+      const volumes = bars.map(b => b.volume || 0);
 
-      const latest   = closes.at(-1) ?? 0;
-      const maxHigh  = Math.max(...highs);
-      const minLow   = Math.min(...lows);
-      const recent20 = closes.slice(-20);
-      const sma20    = recent20.reduce((s, c) => s + c, 0) / recent20.length;
+      const latest = closes.at(-1) ?? 0;
+      if (!latest) return null;
 
-      // Simple pivot: highest high and lowest low in last 20 sessions
-      const pivotHigh = Math.max(...highs.slice(-20));
-      const pivotLow  = Math.min(...lows.slice(-20));
+      // ── SMA levels (strong dynamic S/R) ──────────────────────────────────
+      const avg = (arr: number[]) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+      const sma20 = avg(closes.slice(-20));
+      const sma50 = avg(closes.slice(-50));
+      const smaAll = closes.length >= 200 ? avg(closes.slice(-200)) : sma50;
 
-      // Support: nearest round number below current price or SMA20
-      const support    = Math.min(sma20, pivotLow) * 0.99;
-      const resistance = Math.max(sma20 * 1.02, pivotHigh);
+      // ── Pivot points (last 5 and 20 sessions) ────────────────────────────
+      const recentHighs20 = highs.slice(-20);
+      const recentLows20  = lows.slice(-20);
+      const pivotHigh5    = Math.max(...highs.slice(-5));
+      const pivotLow5     = Math.min(...lows.slice(-5));
+      const pivotHigh20   = Math.max(...recentHighs20);
+      const pivotLow20    = Math.min(...recentLows20);
 
+      // ── Volume-weighted nearby zones ─────────────────────────────────────
+      // Find the price levels with highest traded volume (acting as value areas)
+      let maxVolume = 0;
+      let volWeightedPrice = latest;
+      for (let i = 0; i < closes.length; i++) {
+        if (volumes[i] > maxVolume) {
+          maxVolume = volumes[i];
+          volWeightedPrice = closes[i];
+        }
+      }
+
+      // ── Round-number magnetism ────────────────────────────────────────────
+      // Prices cluster near round numbers (100, 500, 1000, etc.)
+      const roundUnit = latest >= 1000 ? 50 : latest >= 500 ? 20 : latest >= 100 ? 10 : latest >= 50 ? 5 : 1;
+      const nearestRoundBelow = Math.floor(latest / roundUnit) * roundUnit;
+      const nearestRoundAbove = Math.ceil(latest / roundUnit) * roundUnit;
+
+      // ── Compute final S/R ─────────────────────────────────────────────────
+      // Support: strongest floor below current price
+      const supportCandidates = [
+        sma20 * 0.998,
+        sma50 * 0.995,
+        pivotLow20,
+        pivotLow5,
+        nearestRoundBelow,
+        volWeightedPrice < latest ? volWeightedPrice : latest * 0.98,
+      ].filter(v => v > 0 && v < latest);
+
+      // Resistance: strongest ceiling above current price
+      const resistanceCandidates = [
+        pivotHigh20,
+        pivotHigh5,
+        sma20 * 1.002,
+        nearestRoundAbove,
+        volWeightedPrice > latest ? volWeightedPrice : latest * 1.03,
+        latest * 1.05,
+      ].filter(v => v > 0 && v > latest);
+
+      // Prefer the closest candidate to current price
+      const support    = supportCandidates.length > 0
+        ? supportCandidates.reduce((best, v) => Math.abs(latest - v) < Math.abs(latest - best) ? v : best, supportCandidates[0])
+        : latest * 0.96;
+
+      const resistance = resistanceCandidates.length > 0
+        ? resistanceCandidates.reduce((best, v) => Math.abs(latest - v) < Math.abs(latest - best) ? v : best, resistanceCandidates[0])
+        : latest * 1.04;
+
+      // ── Trend determination ───────────────────────────────────────────────
       const trend: SupportResistanceLevel['trend'] =
-        latest > sma20 * 1.01 ? 'uptrend' :
-        latest < sma20 * 0.99 ? 'downtrend' : 'sideways';
+        latest > sma20 * 1.015 && sma20 > sma50 * 0.995 ? 'uptrend' :
+        latest < sma20 * 0.985 && sma20 < sma50 * 1.005 ? 'downtrend' : 'sideways';
 
       return {
         symbol,
-        price: latest,
+        price:      Math.round(latest * 100) / 100,
         support:    Math.round(support * 100) / 100,
         resistance: Math.round(resistance * 100) / 100,
-        pivotHigh:  Math.round(pivotHigh * 100) / 100,
-        pivotLow:   Math.round(pivotLow * 100) / 100,
+        pivotHigh:  Math.round(pivotHigh20 * 100) / 100,
+        pivotLow:   Math.round(pivotLow20 * 100) / 100,
         trend,
       };
     } catch (err) {

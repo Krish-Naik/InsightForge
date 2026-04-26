@@ -10,6 +10,7 @@ import {
   type StockCacheData,
 } from './stockCacheService.js';
 import { MarketUniverseService } from './marketUniverseService.js';
+import { MARKET_STOCKS_DATA } from '../data/generatedStocks.js';
 import { logger } from '../utils/logger.js';
 import type { Index, ScreenerMetric, Quote } from './marketTypes.js';
 
@@ -225,7 +226,7 @@ export async function runBatchJob(): Promise<BatchJobResult> {
   let allQuotesForScanner: Quote[] = [];
 
   try {
-    const stockSymbols = MarketUniverseService.getStockSymbols();
+    const stockSymbols = Object.keys(MARKET_STOCKS_DATA);
 
     if (!stockSymbols.length) {
       logger.warn('Stock universe empty — batch skipped');

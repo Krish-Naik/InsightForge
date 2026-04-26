@@ -13,8 +13,9 @@ export interface AuthRequest extends Request {
   };
 }
 
-export const auth = asyncHandler(async (req: AuthRequest, _res: Response, next: NextFunction) => {
-  const authHeader = req.headers.authorization;
+export const auth = asyncHandler(async (req: Request, _res: Response, next: NextFunction) => {
+  const authReq = req as AuthRequest;
+  const authHeader = authReq.headers.authorization;
 
   if (!authHeader?.startsWith('Bearer ')) {
     throw new AppError('Authentication required', 401);
@@ -32,7 +33,7 @@ export const auth = asyncHandler(async (req: AuthRequest, _res: Response, next: 
     throw new AppError('Token expired. Please login again.', 401);
   }
 
-  req.user = {
+  authReq.user = {
     _id: user._id.toString(),
     name: user.name,
     email: user.email,

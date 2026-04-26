@@ -497,7 +497,7 @@ export class MarketUniverseService {
     return buildSectorGroups(universe);
   }
 
-  static async getStocksBySector(sector: string, limit = 80): Promise<UniverseStock[]> {
+  static async getStocksBySector(sector: string, limit = 200): Promise<UniverseStock[]> {
     const normalized = normalizeSearchValue(sector);
     if (!normalized) return [];
 

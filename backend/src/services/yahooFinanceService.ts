@@ -1,4 +1,5 @@
 import axios from 'axios';
+import YahooFinance from 'yahoo-finance2';
 import {
   findIndexDefinition,
   findStockDefinition,
@@ -105,6 +106,31 @@ interface YahooChartResponse {
   };
 }
 
+interface YahooQuoteResponse {
+  quoteResponse?: {
+    result?: Array<{
+      symbol: string;
+      shortName?: string;
+      longName?: string;
+      regularMarketPrice?: number;
+      regularMarketChange?: number;
+      regularMarketChangePercent?: number;
+      regularMarketVolume?: number;
+      regularMarketDayHigh?: number;
+      regularMarketDayLow?: number;
+      regularMarketOpen?: number;
+      previousClose?: number;
+      fiftyTwoWeekHigh?: number;
+      fiftyTwoWeekLow?: number;
+      marketCap?: number;
+      currency?: string;
+      marketState?: string;
+      exchange?: string;
+    }>;
+    error?: { description?: string } | null;
+  };
+}
+
 
 interface FundamentalSnapshot {
   sector: string;
@@ -124,9 +150,81 @@ const http = axios.create({
   timeout: HTTP_TIMEOUT_MS,
   headers: {
     Accept: 'application/json',
-    'User-Agent': 'Mozilla/5.0 InsightForge/2.0',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept-Language': 'en-US,en;q=0.9',
   },
 });
+
+const http2 = axios.create({
+  baseURL: 'https://query2.finance.yahoo.com',
+  timeout: HTTP_TIMEOUT_MS,
+  headers: {
+    Accept: 'application/json',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept-Language': 'en-US,en;q=0.9',
+  },
+});
+
+interface YahooQuoteSummaryResponse {
+  quoteSummary?: {
+    result?: Array<{
+      summaryDetail?: {
+        marketCap?: { raw: number; fmt?: string };
+        sharesOutstanding?: { raw: number; fmt?: string };
+      };
+      defaultKeyStatistics?: {
+        sharesOutstanding?: { raw: number };
+        floatShares?: { raw: number };
+      };
+    }>;
+    error?: { description?: string } | null;
+  };
+}
+
+let cachedCrumb: string | null = null;
+let crumbExpiry: number = 0;
+
+async function getYahooCrumb(): Promise<string | null> {
+  const now = Date.now();
+  if (cachedCrumb && now < crumbExpiry) {
+    return cachedCrumb;
+  }
+  
+  try {
+    const response = await axios.get('https://finance.yahoo.com/quote/AAPL', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      timeout: 10000,
+    });
+    
+    const html = response.data as string;
+    const crumbMatch = html.match(/"CrumbStore":\s*\{[^}]*"crumb":"([^"]+)"/);
+    
+    if (crumbMatch && crumbMatch[1]) {
+      cachedCrumb = crumbMatch[1];
+      crumbExpiry = now + 3600000;
+      logger.info(`Got Yahoo crumb: ${cachedCrumb.substring(0, 10)}...`);
+      return cachedCrumb;
+    }
+    
+    const scriptMatch = html.match(/CrumbStore[^}]*crumb[^"]*"([^"]+)"/);
+    if (scriptMatch && scriptMatch[1]) {
+      cachedCrumb = scriptMatch[1];
+      crumbExpiry = now + 3600000;
+      logger.info(`Got Yahoo crumb from script: ${cachedCrumb.substring(0, 10)}...`);
+      return cachedCrumb;
+    }
+    
+    logger.warn('Could not extract crumb from Yahoo finance page');
+    return null;
+  } catch (error) {
+    logger.warn(`Failed to get Yahoo crumb: ${(error as Error).message}`);
+    return null;
+  }
+}
 
 const cache = new Map<string, CacheEntry<unknown>>();
 
@@ -508,6 +606,146 @@ async function getQuotesForTargets(targets: YahooTarget[]): Promise<Quote[]> {
   return targets.map((target) => results.get(target.requestSymbol) || emptyQuote(target));
 }
 
+const QUOTE_API_BATCH_SIZE = 50;
+
+async function fetchQuotesFromQuoteApi(targets: YahooTarget[]): Promise<Map<string, Quote>> {
+  const mapped = new Map<string, Quote>();
+  const symbols = targets.map(t => t.yahooSymbol).join(',');
+  
+  try {
+    const response = await http.get<YahooQuoteResponse>('/v7/finance/quote', {
+      params: { symbols },
+    });
+    
+    const results = response.data.quoteResponse?.result || [];
+    
+    for (const stock of results) {
+      const target = targets.find(t => t.yahooSymbol === stock.symbol) || targets.find(t => t.yahooSymbol === `${stock.symbol}.NS`);
+      if (!target) continue;
+      
+      const price = Number(stock.regularMarketPrice || 0);
+      const previousClose = Number(stock.previousClose || 0);
+      const marketCap = Number(stock.marketCap || 0);
+      
+      const quote: Quote = {
+        symbol: target.requestSymbol,
+        name: stock.longName || stock.shortName || target.name,
+        price,
+        change: Number(stock.regularMarketChange || 0),
+        changePercent: Number(stock.regularMarketChangePercent || 0),
+        volume: Number(stock.regularMarketVolume || 0),
+        dayHigh: Number(stock.regularMarketDayHigh || price),
+        dayLow: Number(stock.regularMarketDayLow || price),
+        previousClose,
+        open: Number(stock.regularMarketOpen || previousClose),
+        high52w: Number(stock.fiftyTwoWeekHigh || 0),
+        low52w: Number(stock.fiftyTwoWeekLow || 0),
+        marketCap,
+        currency: stock.currency || 'INR',
+        marketState: stock.marketState || 'REGULAR',
+        exchange: stock.exchange || target.exchange,
+        timestamp: new Date().toISOString(),
+        isStale: false,
+      };
+      
+      mapped.set(target.requestSymbol, quote);
+    }
+  } catch (error) {
+    logger.warn(`Yahoo v7/quote fetch failed: ${(error as Error).message}`);
+  }
+  
+  return mapped;
+}
+
+export async function getQuotesWithMarketCap(symbols: string[]): Promise<Quote[]> {
+  const targets = symbols.map(resolveTarget).filter(t => Boolean(t.requestSymbol));
+  
+  const results = new Map<string, Quote>();
+  const mcResults = new Map<string, number>();
+  const missing: YahooTarget[] = [];
+  
+  for (const target of targets) {
+    const cached = cacheGet<Quote>(`yahoo:quote:${target.yahooSymbol}:withMcap`);
+    if (cached && cached.marketCap > 0) {
+      results.set(target.requestSymbol, cached);
+      continue;
+    }
+    missing.push(target);
+  }
+  
+  if (missing.length === 0) {
+    return targets.map(t => results.get(t.requestSymbol) || emptyQuote(t));
+  }
+
+  const quoteBatches = chunk(missing, QUOTE_API_BATCH_SIZE);
+  const settled = await Promise.allSettled(quoteBatches.map(batch => fetchQuotesFromQuoteApi(batch)));
+  
+  for (const outcome of settled) {
+    if (outcome.status === 'fulfilled') {
+      for (const [symbol, quote] of outcome.value.entries()) {
+        if (quote.price > 0) {
+          results.set(symbol, quote);
+        }
+      }
+    }
+  }
+
+  const symbolsWithPrice = [...results.keys()];
+  if (symbolsWithPrice.length > 0) {
+    const mcBatches = chunk(symbolsWithPrice, 10);
+    const mcSettled = await Promise.allSettled(
+      mcBatches.map(async batch => {
+        const mcaps: [string, number][] = [];
+        for (const sym of batch) {
+          const mc = await fetchMarketCapFromSummary(sym);
+          if (mc) mcaps.push([sym, mc]);
+        }
+        return mcaps;
+      })
+    );
+    
+    for (const outcome of mcSettled) {
+      if (outcome.status === 'fulfilled') {
+        for (const [sym, mc] of outcome.value) {
+          mcResults.set(sym, mc);
+        }
+      }
+    }
+  }
+  
+  const finalQuotes: Quote[] = [];
+  for (const target of targets) {
+    const quote = results.get(target.requestSymbol);
+    const marketCap = mcResults.get(target.requestSymbol) || 0;
+    
+    if (quote && quote.price > 0) {
+      const quoteWithMc = { ...quote, marketCap };
+      results.set(target.requestSymbol, quoteWithMc);
+      cacheSet(`yahoo:quote:${target.yahooSymbol}:withMcap`, quoteWithMc, CACHE_TTL.quote * 10);
+      finalQuotes.push(quoteWithMc);
+    } else {
+      finalQuotes.push(emptyQuote(target));
+    }
+  }
+  
+  return finalQuotes;
+}
+
+const yf = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
+
+async function fetchMarketCapFromSummary(symbol: string): Promise<number | null> {
+  try {
+    const result = await yf.quoteSummary(symbol + '.NS', { modules: ['summaryDetail'] });
+    if (result.summaryDetail?.marketCap) {
+      logger.info(`Got market cap for ${symbol}: ${result.summaryDetail.marketCap}`);
+      return result.summaryDetail.marketCap;
+    }
+    return null;
+  } catch (error) {
+    return null;
+  }
+}
+
 async function getSummary(target: YahooTarget): Promise<FundamentalSnapshot> {
   const cacheKey = `yahoo:summary:${target.yahooSymbol}`;
   const cached = cacheGet<FundamentalSnapshot>(cacheKey);
@@ -750,7 +988,7 @@ export class YahooFinanceService {
         };
       })
       .filter((entry) => entry.stockCount > 0)
-      .sort((left, right) => Math.abs(right.averageChangePercent || 0) - Math.abs(left.averageChangePercent || 0));
+      .sort((left, right) => right.averageChangePercent - left.averageChangePercent);
 
     cacheSet(cacheKey, data, CACHE_TTL.sectorOverview);
     return data;

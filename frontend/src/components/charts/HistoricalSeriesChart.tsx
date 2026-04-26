@@ -138,25 +138,28 @@ export function HistoricalSeriesChart({
     import('lightweight-charts').then(({ createChart, CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, LineSeries }) => {
       if (!containerRef.current) return;
 
+      const getCSSVar = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+      const chartBg = getComputedStyle(containerRef.current).backgroundColor || 'transparent';
       const chart = createChart(containerRef.current, {
         layout: {
-          background: { type: ColorType.Solid, color: '#0b1824' },
-          textColor: '#9db5c8',
+          background: { type: ColorType.Solid, color: 'transparent' },
+          textColor: getCSSVar('--chart-text') || '#6b7280',
           fontSize: 11,
         },
         grid: {
-          vertLines: { color: 'rgba(30,42,64,0.45)' },
-          horzLines: { color: 'rgba(30,42,64,0.45)' },
+          vertLines: { color: 'transparent' },
+          horzLines: { color: getCSSVar('--border-subtle') },
         },
         crosshair: { mode: CrosshairMode.Normal },
         width: containerRef.current.clientWidth,
         height,
         rightPriceScale: {
-          borderColor: 'rgba(30,42,64,0.8)',
+          borderColor: getCSSVar('--border-subtle'),
           scaleMargins: { top: 0.08, bottom: showVolume ? 0.24 : 0.08 },
         },
         timeScale: {
-          borderColor: 'rgba(30,42,64,0.8)',
+          borderColor: getCSSVar('--border-subtle'),
           rightOffset: 6,
           barSpacing: variant === 'candles' ? 8 : 6,
           timeVisible: period === '15m' || period === '1d' || period === '5d',
@@ -167,12 +170,12 @@ export function HistoricalSeriesChart({
 
       if (variant === 'candles') {
         const candles = chart.addSeries(CandlestickSeries, {
-          upColor: '#32d38b',
-          downColor: '#ff6c79',
-          borderUpColor: '#32d38b',
-          borderDownColor: '#ff6c79',
-          wickUpColor: '#32d38b',
-          wickDownColor: '#ff6c79',
+          upColor: getCSSVar('--chart-up'),
+          downColor: getCSSVar('--chart-down'),
+          borderUpColor: getCSSVar('--chart-up'),
+          borderDownColor: getCSSVar('--chart-down'),
+          wickUpColor: getCSSVar('--chart-up'),
+          wickDownColor: getCSSVar('--chart-down'),
         });
         candles.setData(points.map((point) => ({
           time: point.time as any,
@@ -183,7 +186,7 @@ export function HistoricalSeriesChart({
         })));
       } else {
         const line = chart.addSeries(LineSeries, {
-          color: '#4dc7ff',
+          color: getCSSVar('--chart-line'),
           lineWidth: 2,
           priceLineVisible: false,
           lastValueVisible: false,
@@ -194,15 +197,15 @@ export function HistoricalSeriesChart({
       if (showIndicators) {
         const closes = points.map((point) => point.close);
         const overlays = [
-          { color: '#4dc7ff', values: calculateSma(closes, 20) },
-          { color: '#ffbf5e', values: calculateSma(closes, 50) },
-          { color: '#13e0a1', values: calculateEma(closes, 21) },
+          { color: getCSSVar('--chart-sma-20'), values: calculateSma(closes, 20) },
+          { color: getCSSVar('--chart-sma-50'), values: calculateSma(closes, 50) },
+          { color: getCSSVar('--chart-ema-21'), values: calculateEma(closes, 21) },
         ];
 
         for (const overlay of overlays) {
           const seriesLine = chart.addSeries(LineSeries, {
             color: overlay.color,
-            lineWidth: 2,
+            lineWidth: 1,
             priceLineVisible: false,
             lastValueVisible: false,
           });
@@ -226,7 +229,7 @@ export function HistoricalSeriesChart({
           .map((point) => ({
             time: point.time as any,
             value: point.volume,
-            color: point.close >= point.open ? 'rgba(50, 211, 139, 0.35)' : 'rgba(255, 108, 121, 0.35)',
+            color: point.close >= point.open ? getCSSVar('--chart-vol-up') : getCSSVar('--chart-vol-down'),
           })));
       }
 
@@ -250,10 +253,10 @@ export function HistoricalSeriesChart({
   }, [height, period, points, showIndicators, showVolume, variant]);
 
   return (
-    <div style={{ position: 'relative', height }}>
+    <div style={{ position: 'relative', height, width: '100%' }}>
       {loading ? (
         <div className="empty-state" style={{ height }}>
-          <Loader2 className="anim-spin" style={{ width: 24, height: 24, color: 'var(--primary)' }} />
+          <Loader2 className="anim-spin" style={{ width: 24, height: 24, color: 'var(--text-3)' }} />
           <div style={{ fontSize: 12, color: 'var(--text-2)' }}>Loading {symbol} chart...</div>
         </div>
       ) : null}
@@ -268,7 +271,7 @@ export function HistoricalSeriesChart({
       {!loading && !error && !points.length ? (
         <div className="empty-state" style={{ height }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-1)' }}>No chart data</div>
-          <div style={{ fontSize: 12, color: 'var(--text-2)' }}>No cached historical data was available for {symbol} in the selected window.</div>
+          <div style={{ fontSize: 12, color: 'var(--text-2)' }}>No historical data for {symbol} in this window.</div>
         </div>
       ) : null}
 
@@ -278,7 +281,7 @@ export function HistoricalSeriesChart({
           width: '100%',
           height,
           opacity: loading || error || !points.length ? 0 : 1,
-          transition: 'opacity 140ms ease',
+          transition: 'opacity 200ms ease',
         }}
       />
     </div>

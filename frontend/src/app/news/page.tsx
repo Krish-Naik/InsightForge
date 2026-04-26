@@ -131,8 +131,8 @@ export default function NewsPage() {
               </div>
             ) : news.length ? (
               <div className="story-stream">
-                {news.slice(1).map((item) => (
-                  <article key={item.id} className="recap-card">
+                {news.slice(1).map((item, idx) => (
+                  <article key={`${item.id}-${idx}`} className="recap-card">
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                         <TrendBadge tone={item.sentiment === 'bullish' ? 'positive' : item.sentiment === 'bearish' ? 'negative' : 'warning'}>{item.sentiment}</TrendBadge>

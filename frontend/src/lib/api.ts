@@ -48,9 +48,11 @@ api.interceptors.request.use((request) => {
 
 export interface Quote {
   symbol: string; name: string; price: number; change: number;
-  changePercent: number; volume: number; dayHigh: number; dayLow: number;
+  changePercent: number; volume: number; volumeCr?: number;
+  dayHigh: number; dayLow: number;
   previousClose: number; open: number; high52w: number; low52w: number;
-  marketCap: number; currency: string; marketState: string; exchange: string;
+  marketCap: number; marketCapCr?: number;
+  currency: string; marketState: string; exchange: string;
   timestamp: string; isStale?: boolean;
 }
 
@@ -615,6 +617,11 @@ export const marketAPI = {
     api.get(`/market/radar/sr/${encodeURIComponent(symbol)}`),
   getMovers: (cap: CapFilter = 'all'): Promise<{ gainers: Quote[]; losers: Quote[]; volumeLeaders: Quote[] }> =>
     api.get(`/market/movers/by-cap?cap=${cap}`),
+  getEnhancedMovers: (): Promise<{
+    largecap: { gainers: Quote[]; losers: Quote[]; volumeLeaders: Quote[] };
+    midcap: { gainers: Quote[]; losers: Quote[]; volumeLeaders: Quote[] };
+    smallcap: { gainers: Quote[]; losers: Quote[]; volumeLeaders: Quote[] };
+  }> => api.get('/market/movers/enhanced'),
 };
 
 export const authAPI = {

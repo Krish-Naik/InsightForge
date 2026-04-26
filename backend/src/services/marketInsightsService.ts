@@ -419,11 +419,18 @@ function buildSectorRotationInsight(sector: SectorOverview): SectorRotationInsig
 }
 
 function buildMarketNarrative(summary: Awaited<ReturnType<typeof MarketDataService.getMarketSummary>>, sectors: SectorOverview[]) {
-  const avgIndexMove = average(summary.indices.map((index) => index.changePercent));
-  const positiveSectors = sectors.filter((sector) => sector.trend === 'bullish').length;
-  const negativeSectors = sectors.filter((sector) => sector.trend === 'bearish').length;
-  const strongestSector = sectors[0]?.sector;
-  const weakestSector = [...sectors].reverse().find((sector) => sector.trend === 'bearish')?.sector;
+  const sortedByChange = [...sectors].sort((a, b) => b.averageChangePercent - a.averageChangePercent);
+
+  const positiveSectors = sortedByChange.filter(s => s.averageChangePercent > 0).length;
+  const negativeSectors = sortedByChange.filter(s => s.averageChangePercent < 0).length;
+  const avgIndexMove = sortedByChange.reduce((sum, s) => sum + s.averageChangePercent, 0) / sortedByChange.length;
+
+  const strongest = sortedByChange.filter(s => s.averageChangePercent > 0);
+  const strongestSector = strongest[0]?.sector || sortedByChange[0]?.sector;
+
+  const weakest = sortedByChange.filter(s => s.averageChangePercent < 0);
+  const weakestSector = weakest[weakest.length - 1]?.sector || sortedByChange[sortedByChange.length - 1]?.sector;
+
   const tone = avgIndexMove >= 0.45 && positiveSectors >= negativeSectors
     ? 'bullish'
     : avgIndexMove <= -0.45 && negativeSectors >= positiveSectors
@@ -431,11 +438,13 @@ function buildMarketNarrative(summary: Awaited<ReturnType<typeof MarketDataServi
       : Math.abs(avgIndexMove) < 0.25
         ? 'balanced'
         : 'neutral';
+
   const headline = strongestSector && weakestSector
     ? `${strongestSector} is carrying the tape while ${weakestSector} stays on the back foot.`
     : strongestSector
       ? `${strongestSector} is setting the tone for the market right now.`
       : 'The market is waiting for broader leadership to emerge.';
+
   const breadthCopy = positiveSectors > negativeSectors
     ? 'Breadth is net positive, but conviction is still concentrated in a few pockets.'
     : positiveSectors < negativeSectors
@@ -458,10 +467,13 @@ function buildMarketNarrative(summary: Awaited<ReturnType<typeof MarketDataServi
 }
 
 function buildRecap(opportunities: OpportunityCard[], sectors: SectorOverview[]): RecapCard[] {
+  const sortedByChange = [...sectors].sort((a, b) => b.averageChangePercent - a.averageChangePercent);
+
   const strongest = opportunities[0];
   const risk = opportunities.find((entry) => entry.direction === 'bearish' || entry.state === 'extended');
   const carry = opportunities.find((entry) => entry.state === 'building');
-  const weakSector = [...sectors].reverse().find((sector) => sector.trend === 'bearish');
+  const weakSectors = sortedByChange.filter(s => s.averageChangePercent < 0);
+  const weakSector = weakSectors[weakSectors.length - 1];
 
   return [
     strongest ? {
@@ -778,34 +790,34 @@ function buildOpportunityPool(
     .sort((left, right) => right.score - left.score);
 }
 
+// BEFORE → AFTER
 function radarLimitBySelectivity(selectivity: Selectivity): number {
-  if (selectivity === 'conservative') return 12;
-  if (selectivity === 'aggressive') return 28;
-  return 18;
+  if (selectivity === 'conservative') return 12;  // → 20
+  if (selectivity === 'aggressive') return 28;    // → 40
+  return 18;  // → 30 (balanced)
 }
 
 function radarSectorLimitBySelectivity(selectivity: Selectivity): number {
-  if (selectivity === 'conservative') return 8;
-  if (selectivity === 'aggressive') return 12;
-  return 10;
+  if (selectivity === 'conservative') return 8;   // → 15
+  if (selectivity === 'aggressive') return 12;    // → 25
+  return 10;  // → 20 (balanced)
 }
 
 function screenerLimitBySelectivity(selectivity: Selectivity): number {
-  if (selectivity === 'conservative') return 14;
-  if (selectivity === 'aggressive') return 36;
-  return 24;
+  if (selectivity === 'conservative') return 14;  // → 25
+  if (selectivity === 'aggressive') return 36;    // → 60
+  return 24;  // → 40 (balanced)
 }
 
 function screenerSectorLimitBySelectivity(selectivity: Selectivity, sector: string | 'all'): number {
   if (sector !== 'all') {
-    if (selectivity === 'conservative') return 24;
-    if (selectivity === 'aggressive') return 48;
-    return 36;
+    if (selectivity === 'conservative') return 24;  // → 40
+    if (selectivity === 'aggressive') return 48;    // → 80
+    return 36;  // → 60 (balanced)
   }
-
-  if (selectivity === 'conservative') return 10;
-  if (selectivity === 'aggressive') return 18;
-  return 14;
+  if (selectivity === 'conservative') return 10;  // → 20
+  if (selectivity === 'aggressive') return 18;    // → 35
+  return 14;  // → 25 (balanced)
 }
 
 function buildCoverage(

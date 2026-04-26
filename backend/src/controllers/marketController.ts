@@ -81,6 +81,12 @@ export const marketController = {
     res.json({ success: true, data, timestamp: new Date().toISOString() });
   }),
 
+  getEnhancedMovers: asyncHandler(async (_req: Request, res: Response) => {
+    setCacheHeaders(res, 30);
+    const data = await MarketDataService.getEnhancedMoversByCap();
+    res.json({ success: true, data, timestamp: new Date().toISOString() });
+  }),
+
   getQuotes: asyncHandler(async (req: Request, res: Response) => {
     setCacheHeaders(res, 15);
     const { symbols } = req.query;

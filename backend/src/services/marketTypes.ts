@@ -22,6 +22,7 @@ export interface Quote {
   change: number;
   changePercent: number;
   volume: number;
+  volumeCr?: number;  // Volume in Crores
   dayHigh: number;
   dayLow: number;
   previousClose: number;
@@ -29,6 +30,7 @@ export interface Quote {
   high52w: number;
   low52w: number;
   marketCap: number;
+  marketCapCr?: number;  // Market cap in Crores
   currency: string;
   marketState: string;
   exchange: string;

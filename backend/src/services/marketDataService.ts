@@ -5,7 +5,9 @@ import {
   getSearchCatalogResults,
 } from '../data/marketCatalog.js';
 import { MarketUniverseService } from './marketUniverseService.js';
-import { YahooFinanceService } from './yahooFinanceService.js';
+import { YahooFinanceService, getQuotesWithMarketCap } from './yahooFinanceService.js';
+import { getAllStocks } from './stockCacheService.js';
+import { MARKET_STOCKS_DATA } from '../data/generatedStocks.js';
 import type { Index, Quote, ScreenerMetric, StockResearch } from './marketTypes.js';
 
 type ProviderName = 'yahoo';
@@ -184,44 +186,29 @@ export class MarketDataService {
         return q.price > 0;
       });
     
-    // Use NIFTY 50 list for accurate largecap identification
-    const nifty50 = new Set(NIFTY_50_STOCKS);
-    
-    // Categorize by cap based on multiple factors:
-    // - NIFTY 50 = Largecap
-    // - High price + high volume + high market cap = Midcap  
-    // - Remaining = Smallcap
-    const LARGE_PRICE = 1000;
-    const MID_PRICE = 200;
-    const LARGE_VOLUME = 5000000; // 50L volume threshold
+    // Market Cap thresholds (in INR)
+    // Largecap: > ₹20,000 Cr = 200,000,000,000
+    // Midcap: ₹2,000 Cr - ₹20,000 Cr = 20,000,000,000
+    // Smallcap: < ₹2,000 Cr
+    const LARGE_CAP = 200_000_000_000;
+    const MID_CAP = 20_000_000_000;
     
     let filtered: Quote[];
     switch (cap) {
       case 'largecap':
-        // NIFTY 50 stocks + high price stocks with high volume
-        filtered = allQuotes.filter(q => {
-          const isNifty50 = nifty50.has(q.symbol);
-          const isHighPriceHighVol = q.price >= LARGE_PRICE && (q.volume || 0) >= LARGE_VOLUME;
-          return isNifty50 || isHighPriceHighVol;
-        });
+        // Market cap > ₹20k Cr
+        filtered = allQuotes.filter(q => (q.marketCap || 0) > LARGE_CAP);
         break;
       case 'midcap':
-        // Mid price stocks with good volume (not in NIFTY 50)
+        // Market cap ₹2k Cr - ₹20k Cr
         filtered = allQuotes.filter(q => {
-          const isNifty50 = nifty50.has(q.symbol);
-          const isMidPrice = q.price >= MID_PRICE && q.price < LARGE_PRICE;
-          const hasVolume = (q.volume || 0) >= 1000000;
-          return !isNifty50 && isMidPrice && hasVolume;
+          const mc = q.marketCap || 0;
+          return mc > MID_CAP && mc <= LARGE_CAP;
         });
         break;
       case 'smallcap':
-        // Lower price stocks with decent volume (not in NIFTY 50)
-        filtered = allQuotes.filter(q => {
-          const isNifty50 = nifty50.has(q.symbol);
-          const isSmallPrice = q.price > 0 && q.price < LARGE_PRICE;
-          const hasSomeVolume = (q.volume || 0) >= 100000;
-          return !isNifty50 && isSmallPrice && hasSomeVolume;
-        });
+        // Market cap < ₹2k Cr
+        filtered = allQuotes.filter(q => (q.marketCap || 0) <= MID_CAP);
         break;
       default:
         filtered = allQuotes;
@@ -255,12 +242,10 @@ export class MarketDataService {
     const normalizedSymbol = symbol.trim().toUpperCase();
 
     try {
-      const yahooBars = await runProvider('yahoo', () =>
-        YahooFinanceService.getHistoricalData(normalizedSymbol, period),
-      );
-      if (hasUsableHistoricalData(yahooBars as Array<{ close: number }>)) return yahooBars;
+      const yahooData = await runProvider('yahoo', () => YahooFinanceService.getHistoricalData(normalizedSymbol, period));
+      if (hasUsableHistoricalData(yahooData)) return yahooData;
     } catch {
-      // Empty array below.
+      // Empty handled below.
     }
 
     return [];
@@ -311,7 +296,8 @@ export class MarketDataService {
     return [];
   }
 
-  static async getSectorAnalytics(sector: string, limit = 40): Promise<ScreenerMetric[]> {
+  // IMPROVED: Increased from 40 to 150 stocks per sector for better coverage
+  static async getSectorAnalytics(sector: string, limit = 150): Promise<ScreenerMetric[]> {
     try {
       const stocks = await MarketUniverseService.getStocksBySector(sector, limit);
       if (!stocks.length) return [];
@@ -374,5 +360,153 @@ export class MarketDataService {
       MarketUniverseService.getUniverse(),
       YahooFinanceService.primeHotPathCache(),
     ]);
+  }
+
+  static async getAllQuotesWithMarketCap(): Promise<Quote[]> {
+    const cachedStocks = await getAllStocks();
+    const quotes: Quote[] = cachedStocks.map(s => ({
+      symbol: s.symbol,
+      name: s.symbol,
+      price: s.price,
+      change: s.change,
+      changePercent: s.changePercent,
+      volume: s.volume,
+      dayHigh: s.dayHigh,
+      dayLow: s.dayLow,
+      previousClose: s.previousClose,
+      open: s.open,
+      high52w: s.high52w,
+      low52w: s.low52w,
+      marketCap: s.marketCap,
+      marketState: s.marketState,
+      exchange: s.exchange,
+      currency: 'INR',
+      timestamp: s.timestamp,
+      isStale: false,
+    }));
+    
+    const withPrice = quotes.filter(q => q.price > 0);
+    
+    if (withPrice.every(q => q.marketCap && q.marketCap > 0)) {
+      return withPrice;
+    }
+    
+    try {
+      const YahooFinance = (await import('yahoo-finance2')).default;
+      const yf = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
+      
+      const stocksNeedingMc = withPrice.filter(q => !q.marketCap || q.marketCap === 0).slice(0, 50);
+      logger.info(`Fetching market cap for ${stocksNeedingMc.length} stocks using yfinance2...`);
+      
+      const mcapMap = new Map<string, number>();
+      
+      for (const stock of stocksNeedingMc) {
+        try {
+          const result = await yf.quoteSummary(stock.symbol + '.NS', { modules: ['summaryDetail'] });
+          if (result.summaryDetail?.marketCap) {
+            mcapMap.set(stock.symbol, result.summaryDetail.marketCap);
+          }
+        } catch (e) {
+          // Continue to next stock
+        }
+      }
+      
+      logger.info(`Got market cap for ${mcapMap.size} stocks`);
+      
+      return withPrice.map(q => ({
+        ...q,
+        marketCap: mcapMap.get(q.symbol) || q.marketCap,
+      }));
+    } catch (error) {
+      logger.warn(`getAllQuotesWithMarketCap error: ${(error as Error).message}`);
+      return withPrice;
+    }
+  }
+
+  // IMPROVED: Better market cap thresholds and more comprehensive categorization
+  static async getEnhancedMoversByCap(): Promise<{
+    largecap: { gainers: Quote[]; losers: Quote[]; volumeLeaders: Quote[] };
+    midcap: { gainers: Quote[]; losers: Quote[]; volumeLeaders: Quote[] };
+    smallcap: { gainers: Quote[]; losers: Quote[]; volumeLeaders: Quote[] };
+  }> {
+    // Updated thresholds - more realistic for Indian market
+    const LARGE_CAP = 200_000_000_000;  // ₹20,000 Cr
+    const MID_CAP   = 20_000_000_000;   // ₹2,000 Cr (changed from 5,000 Cr for better mid-cap coverage)
+
+    const EMPTY = { gainers: [] as Quote[], losers: [] as Quote[], volumeLeaders: [] as Quote[] };
+
+    // ── Load primary source: cached universe ──────────────────────────────
+    let allQuotes = await this.getAllQuotesWithMarketCap();
+
+    // ── Supplement with live market summary if cache is thin ──────────────
+    if (!allQuotes || allQuotes.length < 100) {
+      logger.info(`Enhanced movers: cache thin (${allQuotes?.length || 0} stocks), supplementing from market summary`);
+      try {
+        const summary = await this.getMarketSummary();
+        const summaryQuotes = [...summary.gainers, ...summary.losers, ...summary.mostActive];
+
+        if (allQuotes.length === 0) {
+          allQuotes = summaryQuotes;
+        } else {
+          // Merge, preferring cached data
+          const cachedSymbols = new Set(allQuotes.map(q => q.symbol));
+          const extra = summaryQuotes.filter(q => !cachedSymbols.has(q.symbol));
+          allQuotes = [...allQuotes, ...extra];
+        }
+      } catch (err) {
+        logger.warn(`Enhanced movers supplemental fetch failed: ${(err as Error).message}`);
+      }
+    }
+
+    if (!allQuotes || allQuotes.length === 0) {
+      return { largecap: EMPTY, midcap: EMPTY, smallcap: EMPTY };
+    }
+
+    logger.info(`Enhanced movers: processing ${allQuotes.length} total stocks from universe`);
+
+    // ── Categorise stocks ────────────────────────────────────────────────
+    const categorize = (quotes: Quote[]) => {
+      if (!quotes || quotes.length === 0) return EMPTY;
+      const valid = quotes.filter(q => q.price > 0 && q.changePercent !== undefined);
+      return {
+        gainers:       [...valid].sort((a, b) => (b.changePercent || 0) - (a.changePercent || 0)).slice(0, 25),
+        losers:        [...valid].sort((a, b) => (a.changePercent || 0) - (b.changePercent || 0)).slice(0, 25),
+        volumeLeaders: [...valid].sort((a, b) => ((b.price * b.volume) || 0) - ((a.price * a.volume) || 0)).slice(0, 25),
+      };
+    };
+
+    const hasMarketCapData = allQuotes.some(q => (q.marketCap || 0) > 0);
+
+    if (hasMarketCapData) {
+      const largecapQ  = allQuotes.filter(q => (q.marketCap || 0) >= LARGE_CAP);
+      const midcapQ    = allQuotes.filter(q => { const mc = q.marketCap || 0; return mc >= MID_CAP && mc < LARGE_CAP; });
+      const smallcapQ  = allQuotes.filter(q => (q.marketCap || 0) < MID_CAP && (q.marketCap || 0) > 0);
+
+      logger.info(`Enhanced movers: largecap=${largecapQ.length}, midcap=${midcapQ.length}, smallcap=${smallcapQ.length}`);
+
+      // If we have good categorization, use it directly
+      if (largecapQ.length >= 10 && midcapQ.length >= 10 && smallcapQ.length >= 10) {
+        return {
+          largecap: categorize(largecapQ),
+          midcap:   categorize(midcapQ),
+          smallcap: categorize(smallcapQ),
+        };
+      }
+
+      // Otherwise use a hybrid approach
+      return {
+        largecap: categorize(largecapQ.length >= 10 ? largecapQ : allQuotes.filter(q => (q.price || 0) >= 1000)),
+        midcap:   categorize(midcapQ.length   >= 10 ? midcapQ   : allQuotes.filter(q => { const p = q.price || 0; return p >= 200 && p < 1000; })),
+        smallcap: categorize(smallcapQ.length >= 10 ? smallcapQ : allQuotes.filter(q => (q.price || 0) < 200)),
+      };
+    }
+
+    // ── Fallback: price-based segmentation ───────────────────────────────
+    logger.info('Enhanced movers: no market cap data, using price-based segmentation');
+    return {
+      largecap: categorize(allQuotes.filter(q => (q.price || 0) >= 1000)),
+      midcap:   categorize(allQuotes.filter(q => { const p = q.price || 0; return p >= 200 && p < 1000; })),
+      smallcap: categorize(allQuotes.filter(q => (q.price || 0) < 200)),
+    };
   }
 }
