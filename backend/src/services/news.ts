@@ -43,6 +43,8 @@ const RSS_FEEDS = [
   'https://news.google.com/rss/search?q=Indian+stock+market+when:1d&hl=en-IN&gl=IN&ceid=IN:en',
   'https://news.google.com/rss/search?q=NSE+OR+BSE+stocks+India+when:1d&hl=en-IN&gl=IN&ceid=IN:en',
   'https://news.google.com/rss/search?q=RBI+OR+FII+OR+DII+markets+India+when:1d&hl=en-IN&gl=IN&ceid=IN:en',
+  'https://economictimes.indiatimes.com/markets/stocks/rssfeedsok.ms?color=1',
+  'https://moneycontrol.com/rss/mcci.xml',
 ];
 
 const xmlParser = new XMLParser({

@@ -31,7 +31,7 @@ await initRedis();
 app.use(helmet({ contentSecurityPolicy: false }));
 
 app.use(cors({
-  origin:      config.isProd ? false : ['http://localhost:3000', 'http://localhost:5173'],
+  origin:      config.isProd ? (process.env.ALLOWED_ORIGINS?.split(',') || ['https://*.vercel.app', 'https://*.vercel.com']) : ['http://localhost:3000', 'http://localhost:5173'],
   credentials: true,
 }));
 

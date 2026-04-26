@@ -19,12 +19,27 @@ class RedisClient {
           }
           return Math.min(times * 200, 2000);
         },
-        lazyConnect: true,
+        connectTimeout: 10000,
+        commandTimeout: 5000,
       });
 
-      await this.client.connect();
+      this.client.on('connect', () => {
+        this.isConnected = true;
+        logger.info('Redis connected successfully');
+      });
+
+      this.client.on('error', (err) => {
+        logger.error(`Redis error: ${err.message}`);
+        this.isConnected = false;
+      });
+
+      this.client.on('close', () => {
+        this.isConnected = false;
+        logger.warn('Redis connection closed');
+      });
+
+      await this.client.ping();
       this.isConnected = true;
-      logger.info('Redis connected successfully');
     } catch (error) {
       logger.error(`Redis connection failed: ${(error as Error).message}`);
       this.isConnected = false;

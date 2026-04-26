@@ -48,7 +48,7 @@ function getScannerKey(type: string): string {
 
 async function getClient() {
   const client = redisClient.getClient();
-  if (!client) {
+  if (!client || !redisClient.healthCheck().connected) {
     throw new Error('Redis not connected');
   }
   return client;
