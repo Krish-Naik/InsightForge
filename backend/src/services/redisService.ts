@@ -5,31 +5,38 @@ import { logger } from '../utils/logger.js';
 class RedisClient {
   private client: Redis | null = null;
   private isConnected = false;
+  private initPromise: Promise<void> | null = null;
 
   async connect(): Promise<void> {
+    if (this.initPromise) {
+      await this.initPromise;
+      return;
+    }
+
+    this.initPromise = this.doConnect();
+    await this.initPromise;
+  }
+
+  private async doConnect(): Promise<void> {
     if (this.client && this.isConnected) return;
 
     try {
       const redisUrl = config.redis.url;
       
       this.client = new Redis(redisUrl, {
-        maxRetriesPerRequest: 3,
+        maxRetriesPerRequest: 1,
         retryStrategy: (times: number) => {
-          if (times > 3) {
+          if (times > 1) {
             logger.warn('Redis retry limit reached, giving up');
             return null;
           }
-          return Math.min(times * 200, 2000);
+          return Math.min(times * 500, 5000);
         },
-        connectTimeout: 10000,
-        commandTimeout: 5000,
-        enableReadyCheck: true,
+        connectTimeout: 15000,
+        commandTimeout: 10000,
+        enableReadyCheck: false,
         lazyConnect: false,
-      });
-
-      this.client.on('connect', () => {
-        this.isConnected = true;
-        logger.info('Redis connected successfully');
+        family: 4,
       });
 
       this.client.on('error', (err) => {
@@ -44,8 +51,9 @@ class RedisClient {
 
       await this.client.ping();
       this.isConnected = true;
+      logger.info('Redis connected successfully');
     } catch (error) {
-      logger.error(`Redis connection failed: ${(error as Error).message}`);
+      logger.warn(`Redis connection failed: ${(error as Error).message} - continuing without cache`);
       this.isConnected = false;
       this.client = null;
     }
@@ -57,7 +65,11 @@ class RedisClient {
 
   async disconnect(): Promise<void> {
     if (this.client) {
-      await this.client.quit();
+      try {
+        await this.client.quit();
+      } catch {
+        // ignore
+      }
       this.client = null;
       this.isConnected = false;
       logger.info('Redis disconnected');
