@@ -1,4 +1,4 @@
-import { Redis } from '@upstash/redis';
+import { Redis } from 'ioredis';
 import { config } from '../config/index.js';
 import { logger } from '../utils/logger.js';
 
@@ -10,28 +10,44 @@ class RedisClient {
     if (this.client && this.isConnected) return;
 
     try {
-      this.client = new Redis({
-        url: config.redis.url,
-        token: this.extractToken(config.redis.url),
+      const redisUrl = config.redis.url;
+      
+      this.client = new Redis(redisUrl, {
+        maxRetriesPerRequest: 3,
+        retryStrategy: (times: number) => {
+          if (times > 3) {
+            logger.warn('Redis retry limit reached, giving up');
+            return null;
+          }
+          return Math.min(times * 200, 2000);
+        },
+        connectTimeout: 10000,
+        commandTimeout: 5000,
+        enableReadyCheck: true,
+        lazyConnect: false,
+      });
+
+      this.client.on('connect', () => {
+        this.isConnected = true;
+        logger.info('Redis connected successfully');
+      });
+
+      this.client.on('error', (err) => {
+        logger.error(`Redis error: ${err.message}`);
+        this.isConnected = false;
+      });
+
+      this.client.on('close', () => {
+        this.isConnected = false;
+        logger.warn('Redis connection closed');
       });
 
       await this.client.ping();
       this.isConnected = true;
-      logger.info('Redis connected successfully');
     } catch (error) {
       logger.error(`Redis connection failed: ${(error as Error).message}`);
       this.isConnected = false;
       this.client = null;
-    }
-  }
-
-  private extractToken(url: string): string {
-    try {
-      const match = url.match(/redis:\/\/([^:]+):([^@]+)@/);
-      if (match) return match[2];
-      return url;
-    } catch {
-      return url;
     }
   }
 
@@ -40,9 +56,12 @@ class RedisClient {
   }
 
   async disconnect(): Promise<void> {
-    this.client = null;
-    this.isConnected = false;
-    logger.info('Redis disconnected');
+    if (this.client) {
+      await this.client.quit();
+      this.client = null;
+      this.isConnected = false;
+      logger.info('Redis disconnected');
+    }
   }
 
   healthCheck(): { connected: boolean; latencyMs?: number } {
@@ -63,7 +82,7 @@ class RedisClient {
     if (!this.client || !this.isConnected) return false;
     try {
       if (ttlSeconds) {
-        await this.client.set(key, value, { EX: ttlSeconds });
+        await this.client.set(key, value, 'EX', ttlSeconds);
       } else {
         await this.client.set(key, value);
       }
